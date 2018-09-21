@@ -72,7 +72,7 @@ NAN_METHOD(GetDiskFreeSpaceEx) {
 }
 
 NAN_MODULE_INIT(Init) {
-  Nan::Set(target, "SetFileAttribute"_n,
+  Nan::Set(target, "SetFileAttributes"_n,
     GetFunction(New<FunctionTemplate>(SetFileAttributes)).ToLocalChecked());
   Nan::Set(target, "GetDiskFreeSpaceEx"_n,
     GetFunction(New<FunctionTemplate>(GetDiskFreeSpaceEx)).ToLocalChecked());
