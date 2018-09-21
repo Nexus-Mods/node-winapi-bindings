@@ -7,9 +7,9 @@ This module is windows-only, when writing cross-platform applications, wrap the 
 
 # Implemented Functions
 
-SetFileAttributes
-GetDiskFreeSpaceEx
+- SetFileAttributes
+- GetDiskFreeSpaceEx
 
 # Supported OS
 
-* Windows
+* Windows (duh!)
