@@ -1,5 +1,6 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+#include <shellapi.h>
 #include <string>
 #include <unordered_map>
 #include <nan.h>
@@ -71,11 +72,80 @@ NAN_METHOD(GetDiskFreeSpaceEx) {
   info.GetReturnValue().Set(result);
 }
 
+
+
+NAN_METHOD(ShellExecuteEx) {
+  Isolate *isolate = Isolate::GetCurrent();
+
+  static const std::unordered_map<std::string, DWORD> showFlagMap{
+    {"hide", SW_HIDE},
+    {"maximize", SW_MAXIMIZE},
+    {"minimize", SW_MINIMIZE},
+    {"restore", SW_RESTORE},
+    {"show", SW_SHOW},
+    {"showdefault", SW_SHOWDEFAULT},
+    {"showminimized", SW_SHOWMINIMIZED},
+    {"showminnoactive", SW_SHOWMINNOACTIVE},
+    {"showna", SW_SHOWNA},
+    {"shownoactivate", SW_SHOWNOACTIVATE},
+    {"shownormal", SW_SHOWNORMAL},
+  };
+
+  Local<Object> args(info[0]->ToObject());
+
+  if (!args->Has("file"_n) || !args->Has("show"_n)) {
+    Nan::ThrowError("Parameter missing");
+    return;
+  }
+
+  std::vector<std::wstring> buffers;
+
+  auto assignParameter = [&args, &buffers](LPCWSTR &target, const Local<Value> &key) {
+    if (args->Has(key)) {
+      String::Utf8Value value(args->Get(key)->ToString());
+      buffers.push_back(toWC(*value, CodePage::UTF8, value.length()));
+      target = buffers.rbegin()->c_str();
+    }
+    else {
+      target = nullptr;
+    }
+  };
+
+  SHELLEXECUTEINFOW execInfo;
+  execInfo.cbSize = sizeof(SHELLEXECUTEINFO);
+
+  execInfo.fMask = 0;
+  execInfo.hwnd = nullptr;
+  execInfo.hInstApp = nullptr;
+
+  assignParameter(execInfo.lpVerb, "verb"_n);
+  assignParameter(execInfo.lpFile, "file"_n);
+  assignParameter(execInfo.lpDirectory, "directory"_n);
+  assignParameter(execInfo.lpParameters, "parameters"_n);
+
+  v8::String::Utf8Value show(args->Get("show"_n)->ToString());
+  auto iter = showFlagMap.find(*show);
+  if (iter == showFlagMap.end()) {
+    Nan::ThrowRangeError("Invalid show flag");
+    return;
+  }
+  execInfo.nShow = iter->second;
+
+
+  if (!::ShellExecuteExW(&execInfo)) {
+    isolate->ThrowException(ErrnoException(::GetLastError(), "ShellExecuteEx", "Failed to execute external application",
+                                           toMB(execInfo.lpFile, CodePage::UTF8, wcslen(execInfo.lpFile)).c_str()));
+    return;
+  }
+}
+
 NAN_MODULE_INIT(Init) {
   Nan::Set(target, "SetFileAttributes"_n,
     GetFunction(New<FunctionTemplate>(SetFileAttributes)).ToLocalChecked());
   Nan::Set(target, "GetDiskFreeSpaceEx"_n,
     GetFunction(New<FunctionTemplate>(GetDiskFreeSpaceEx)).ToLocalChecked());
+  Nan::Set(target, "ShellExecuteEx"_n,
+    GetFunction(New<FunctionTemplate>(ShellExecuteEx)).ToLocalChecked());
 }
 
 NODE_MODULE(winapi, Init)

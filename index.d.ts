@@ -8,3 +8,18 @@ export function SetFileAttributes(filePath: string, attributes: FILE_ATTRIBUTES_
 
 // query the available disk space (in bytes) on the specified path
 export function GetDiskFreeSpaceEx(filePath: string): { total: number, free: number, freeToCaller: number };
+
+export type ShellExecuteVerb = 'edit' | 'explore' | 'find' | 'open' | 'print' | 'properties' | 'runas';
+export type ShellExecuteShow = 'hide' | 'maximize' | 'minimize' | 'restore' | 'show' | 'showdefault'
+                             | 'showminimized' | 'showminnoactive' | 'showna' | 'shownoactivate' | 'shownormal';
+
+export interface ShellExecuteOptions {
+  file: string;
+  show: ShellExecuteShow;
+  verb?: ShellExecuteVerb;
+  directory?: string;
+  parameters?: string;
+}
+
+// execute external application
+export function ShellExecuteEx(options: ShellExecuteOptions): void;
