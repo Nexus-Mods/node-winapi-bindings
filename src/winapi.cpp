@@ -247,7 +247,7 @@ NAN_METHOD(WritePrivateProfileString) {
   BOOL res = ::WritePrivateProfileStringW(
     toWC(*appName, CodePage::UTF8, appName.length()).c_str(),
     toWC(*keyName, CodePage::UTF8, keyName.length()).c_str(),
-    toWC(*value, CodePage::UTF8, value.length()).c_str(),
+    info[2]->IsNullOrUndefined() ? nullptr : toWC(*value, CodePage::UTF8, value.length()).c_str(),
     toWC(*fileName, CodePage::UTF8, fileName.length()).c_str());
 
   if (!res) {
