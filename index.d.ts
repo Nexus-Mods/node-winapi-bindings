@@ -23,3 +23,8 @@ export interface ShellExecuteOptions {
 
 // execute external application
 export function ShellExecuteEx(options: ShellExecuteOptions): void;
+
+export function GetPrivateProfileSection(section: string, fileName: string);
+export function GetPrivateProfileSectionNames(fileName: string);
+export function WritePrivateProfileString(section: string, key: string, value: string, fileName: string);
+

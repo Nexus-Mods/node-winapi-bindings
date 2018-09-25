@@ -9,6 +9,10 @@ This module is windows-only, when writing cross-platform applications, wrap the 
 
 - SetFileAttributes
 - GetDiskFreeSpaceEx
+- ShellExecuteEx
+- GetPrivateProfileSection
+- GetPrivateProfileSectionNames
+- WritePrivateProfileString
 
 # Supported OS
 
