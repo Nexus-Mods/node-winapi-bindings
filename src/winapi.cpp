@@ -3,6 +3,7 @@
 #include <shellapi.h>
 #include <string>
 #include <unordered_map>
+#include <list>
 #include <nan.h>
 #include <iostream>
 #include "string_cast.h"
@@ -123,7 +124,8 @@ NAN_METHOD(ShellExecuteEx) {
     return;
   }
 
-  std::vector<std::wstring> buffers;
+  // important: has to be a container that doesn't invalidate iterators on insertion (like vector would)
+  std::list<std::wstring> buffers;
 
   auto assignParameter = [&args, &buffers](LPCWSTR &target, const Local<Value> &key) {
     if (args->Has(key)) {
@@ -137,6 +139,7 @@ NAN_METHOD(ShellExecuteEx) {
   };
 
   SHELLEXECUTEINFOW execInfo;
+  ZeroMemory(&execInfo, sizeof(SHELLEXECUTEINFOW));
   execInfo.cbSize = sizeof(SHELLEXECUTEINFO);
 
   execInfo.fMask = 0;
