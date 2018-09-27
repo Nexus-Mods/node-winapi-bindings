@@ -190,14 +190,24 @@ NAN_METHOD(GetPrivateProfileSection) {
   wchar_t *ptr = start;
   // double check. the list is supposed to end on a double zero termination but to ensure we don't overrun
   // the buffer, also verify we don't exceed the character count
+  Local<String> lastKey;
+  Local<String> lastValue;
   while ((*ptr != '\0') && ((ptr - start) < charCount)) {
-    
     wchar_t *eqPos = wcschr(ptr, L'=');
-    size_t valLength = wcslen(eqPos);
-    result->Set(New<String>(toMB(ptr, CodePage::UTF8, eqPos - ptr)).ToLocalChecked(),
-                New<String>(toMB(eqPos + 1, CodePage::UTF8, valLength - 1)).ToLocalChecked());
+    size_t valLength;
+    if (eqPos != nullptr) {
+      lastKey = New<String>(toMB(ptr, CodePage::UTF8, eqPos - ptr)).ToLocalChecked();
+      valLength = wcslen(eqPos);
+      lastValue = New<String>(toMB(eqPos + 1, CodePage::UTF8, valLength - 1)).ToLocalChecked();
+      ptr = eqPos + valLength + 1;
+    }
+    else {
+      valLength = wcslen(ptr);
+      lastValue = String::Concat(String::Concat(lastValue, " "_n), New<String>(toMB(ptr, CodePage::UTF8, valLength)).ToLocalChecked());
+      ptr += valLength + 1;
+    }
 
-    ptr = eqPos + valLength + 1;
+    result->Set(lastKey, lastValue);
   }
 
   info.GetReturnValue().Set(result);
