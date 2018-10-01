@@ -11,12 +11,36 @@
 using namespace Nan;
 using namespace v8;
 
+
+static std::wstring strerror(DWORD errorno) {
+  wchar_t *errmsg = nullptr;
+
+  FormatMessageW(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM |
+    FORMAT_MESSAGE_IGNORE_INSERTS, nullptr, errorno,
+    MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), (LPWSTR)&errmsg, 0, nullptr);
+
+  if (errmsg) {
+    for (int i = (wcslen(errmsg) - 1);
+         (i >= 0) && ((errmsg[i] == '\n') || (errmsg[i] == '\r'));
+         --i) {
+      errmsg[i] = '\0';
+    }
+
+    return errmsg;
+  }
+  else {
+    return L"Unknown error";
+  }
+}
+
 inline v8::Local<v8::Value> WinApiException(
   DWORD lastError
   , const char *func = nullptr
   , const char* path = nullptr) {
 
-  return node::WinapiErrnoException(v8::Isolate::GetCurrent(), lastError, func, nullptr, path);
+  std::wstring errStr = strerror(lastError);
+  std::string err = toMB(errStr.c_str(), CodePage::UTF8, errStr.size());
+  return node::WinapiErrnoException(v8::Isolate::GetCurrent(), lastError, func, err.c_str(), path);
 }
 
 Local<String> operator "" _n(const char *input, size_t) {
