@@ -54,11 +54,12 @@ NAN_METHOD(SetFileAttributes) {
     return;
   }
 
-  String::Utf8Value path(info[0]->ToString());
+  String::Utf8Value pathV8(info[0]->ToString());
+  std::wstring path = toWC(*pathV8, CodePage::UTF8, pathV8.length());
   Local<Array> attributes = Local<Array>::Cast(info[1]);
 
-  if (!::SetFileAttributesW(toWC(*path, CodePage::UTF8, path.length()).c_str(), mapAttributes(attributes))) {
-    isolate->ThrowException(WinApiException(::GetLastError(), "SetFileAttributes", *path));
+  if (!::SetFileAttributesW(path.c_str(), mapAttributes(attributes))) {
+    isolate->ThrowException(WinApiException(::GetLastError(), "SetFileAttributes", *pathV8));
     return;
   }
 }
@@ -71,17 +72,18 @@ NAN_METHOD(GetDiskFreeSpaceEx) {
     return;
   }
 
-  String::Utf8Value path(info[0]->ToString());
+  String::Utf8Value pathV8(info[0]->ToString());
+  std::wstring path = toWC(*pathV8, CodePage::UTF8, pathV8.length());
 
   ULARGE_INTEGER freeBytesAvailableToCaller;
   ULARGE_INTEGER totalNumberOfBytes;
   ULARGE_INTEGER totalNumberOfFreeBytes;
 
-  if (!::GetDiskFreeSpaceExW(toWC(*path, CodePage::UTF8, path.length()).c_str(),
+  if (!::GetDiskFreeSpaceExW(path.c_str(),
                              &freeBytesAvailableToCaller,
                              &totalNumberOfBytes,
                              &totalNumberOfFreeBytes)) {
-    isolate->ThrowException(WinApiException(::GetLastError(), "GetDiskFreeSpaceEx", *path));
+    isolate->ThrowException(WinApiException(::GetLastError(), "GetDiskFreeSpaceEx", *pathV8));
     return;
   }
 
@@ -161,8 +163,8 @@ NAN_METHOD(ShellExecuteEx) {
 
 
   if (!::ShellExecuteExW(&execInfo)) {
-    isolate->ThrowException(WinApiException(::GetLastError(), "ShellExecuteEx",
-                                           toMB(execInfo.lpFile, CodePage::UTF8, wcslen(execInfo.lpFile)).c_str()));
+    std::string fileName = toMB(execInfo.lpFile, CodePage::UTF8, wcslen(execInfo.lpFile));
+    isolate->ThrowException(WinApiException(::GetLastError(), "ShellExecuteEx", fileName.c_str()));
     return;
   }
 }
@@ -175,15 +177,16 @@ NAN_METHOD(GetPrivateProfileSection) {
     return;
   }
 
-  String::Utf8Value appName(info[0]->ToString());
-  String::Utf8Value fileName(info[1]->ToString());
+  String::Utf8Value appNameV8(info[0]->ToString());
+  String::Utf8Value fileNameV8(info[1]->ToString());
+
+  std::wstring appName = toWC(*appNameV8, CodePage::UTF8, appNameV8.length());
+  std::wstring fileName = toWC(*fileNameV8, CodePage::UTF8, fileNameV8.length());
 
   DWORD size = 32 * 1024;
   std::unique_ptr<wchar_t[]> buffer(new wchar_t[size]);
 
-  DWORD charCount = ::GetPrivateProfileSectionW(toWC(*appName, CodePage::UTF8, appName.length()).c_str(),
-                                                buffer.get(), size,
-                                                toWC(*fileName, CodePage::UTF8, fileName.length()).c_str());
+  DWORD charCount = ::GetPrivateProfileSectionW(appName.c_str(), buffer.get(), size, fileName.c_str());
 
   Local<Object> result = New<Object>();
   wchar_t *start = buffer.get();
@@ -252,19 +255,21 @@ NAN_METHOD(WritePrivateProfileString) {
     return;
   }
 
-  String::Utf8Value appName(info[0]->ToString());
-  String::Utf8Value keyName(info[1]->ToString());
-  String::Utf8Value value(info[2]->ToString());
-  String::Utf8Value fileName(info[3]->ToString());
+  String::Utf8Value appNameV8(info[0]->ToString());
+  String::Utf8Value keyNameV8(info[1]->ToString());
+  String::Utf8Value valueV8(info[2]->ToString());
+  String::Utf8Value fileNameV8(info[3]->ToString());
 
-  BOOL res = ::WritePrivateProfileStringW(
-    toWC(*appName, CodePage::UTF8, appName.length()).c_str(),
-    toWC(*keyName, CodePage::UTF8, keyName.length()).c_str(),
-    info[2]->IsNullOrUndefined() ? nullptr : toWC(*value, CodePage::UTF8, value.length()).c_str(),
-    toWC(*fileName, CodePage::UTF8, fileName.length()).c_str());
+  std::wstring appName = toWC(*appNameV8, CodePage::UTF8, appNameV8.length());
+  std::wstring keyName = toWC(*keyNameV8, CodePage::UTF8, keyNameV8.length());
+  std::wstring value = info[2]->IsNullOrUndefined() ? L"" : toWC(*valueV8, CodePage::UTF8, valueV8.length());
+  std::wstring fileName = toWC(*fileNameV8, CodePage::UTF8, fileNameV8.length());
+
+  BOOL res = ::WritePrivateProfileStringW(appName.c_str(), keyName.c_str(),
+      info[2]->IsNullOrUndefined() ? nullptr : value.c_str(), fileName.c_str());
 
   if (!res) {
-    isolate->ThrowException(WinApiException(::GetLastError(), "WritePrivateProfileString", *fileName));
+    isolate->ThrowException(WinApiException(::GetLastError(), "WritePrivateProfileString", *fileNameV8));
   }
 }
 
