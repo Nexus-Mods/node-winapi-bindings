@@ -14,6 +14,11 @@ This module is windows-only, when writing cross-platform applications, wrap the 
 - GetPrivateProfileSectionNames
 - WritePrivateProfileString
 
+- WithRegOpen (wrapper for RegOpenKeyEx and RegCloseKey)
+- RegGetValue
+- RegEnumKeys (wrapper for RegEnumKeyEx retrieving all keys in one call)
+- RegEnumValues (wrapper for RegEnumValue retrieving all value names in one call, not the values themselves though)
+
 # Supported OS
 
 * Windows (duh!)

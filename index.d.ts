@@ -28,3 +28,15 @@ export function GetPrivateProfileSection(section: string, fileName: string);
 export function GetPrivateProfileSectionNames(fileName: string);
 export function WritePrivateProfileString(section: string, key: string, value: string, fileName: string);
 
+export type REGISTRY_HIVE = 'HKEY_CLASSES_ROOT' | 'HKEY_CURRENT_CONFIG' | 'HKEY_CURRENT_USER' | 'HKEY_LOCAL_MACHINE' | 'HKEY_USERS';
+export type REGISTRY_TYPE = 'REG_BINARY' | 'REG_DWORD' | 'REG_DWORD_BIG_ENDIAN' | 'REG_EXPAND_SZ' | 'REG_LINK' | 'REG_MULTI_SZ'
+                          | 'REG_NONE' | 'REG_QWORD' | 'REG_SZ';
+
+// open a registry handle. To ensure the handle isn't leaked it's only available within the callback.
+export function WithRegOpen(hive: REGISTRY_HIVE, path: string, cb: (hkey: Buffer) => void);
+// get a value from the registry using a handle created by WithRegOpen or a hive, and a path and valuename within that hkey.
+export function RegGetValue(hkey: Buffer | REGISTRY_HIVE, path: string, key: string): { type: RegType, value: string | string[] | number | Buffer };
+// get a list of keys within an hkey
+export function RegEnumKeys(hkey: Buffer): Array<{ class: string, key: string, lastWritten: number }>;
+// get a list of value names within an hkey
+export function RegEnumValues(hkey: Buffer): Array<{ type: REGISTRY_TYPE, key: string }>;
