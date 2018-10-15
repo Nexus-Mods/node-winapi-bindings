@@ -15,9 +15,12 @@ using namespace v8;
 static std::wstring strerror(DWORD errorno) {
   wchar_t *errmsg = nullptr;
 
+  LCID lcid;
+  GetLocaleInfoEx(L"en-US", LOCALE_RETURN_NUMBER | LOCALE_ILANGUAGE, reinterpret_cast<LPWSTR>(&lcid), sizeof(lcid));
+
   FormatMessageW(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM |
     FORMAT_MESSAGE_IGNORE_INSERTS, nullptr, errorno,
-    MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), (LPWSTR)&errmsg, 0, nullptr);
+    lcid, (LPWSTR)&errmsg, 0, nullptr);
 
   if (errmsg) {
     for (int i = (wcslen(errmsg) - 1);
