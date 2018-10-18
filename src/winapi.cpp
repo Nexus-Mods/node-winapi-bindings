@@ -50,6 +50,15 @@ Local<String> operator "" _n(const char *input, size_t) {
   return Nan::New(input).ToLocalChecked();
 }
 
+std::wstring toWC(const Local<Value> &input) {
+  if (input->IsNullOrUndefined()) {
+    return std::wstring();
+  }
+  String::Utf8Value temp(input);
+  return toWC(*temp, CodePage::UTF8, temp.length());
+}
+
+
 DWORD mapAttributes(Local<Array> input) {
   static const std::unordered_map<std::string, DWORD> attributeMap{
     { "archive", FILE_ATTRIBUTE_ARCHIVE },
@@ -120,6 +129,25 @@ NAN_METHOD(GetDiskFreeSpaceEx) {
   result->Set("freeToCaller"_n, New<Number>(static_cast<double>(freeBytesAvailableToCaller.QuadPart)));
 
   info.GetReturnValue().Set(result);
+}
+
+NAN_METHOD(GetVolumePathName) {
+  Isolate* isolate = Isolate::GetCurrent();
+
+  if (info.Length() != 1) {
+    Nan::ThrowError("Expected one parameter (path)");
+    return;
+  }
+
+  std::wstring path = toWC(info[0]);
+
+  wchar_t buffer[MAX_PATH];
+  if (!::GetVolumePathNameW(path.c_str(), buffer, MAX_PATH)) {
+    isolate->ThrowException(WinApiException(::GetLastError(), "GetDiskFreeSpaceEx", toMB(path.c_str(), CodePage::UTF8, path.length()).c_str()));
+    return;
+  }
+
+  info.GetReturnValue().Set(New<String>(toMB(buffer, CodePage::UTF8, (std::numeric_limits<size_t>::max)())).ToLocalChecked());
 }
 
 
@@ -531,6 +559,8 @@ NAN_MODULE_INIT(Init) {
     GetFunction(New<FunctionTemplate>(SetFileAttributes)).ToLocalChecked());
   Nan::Set(target, "GetDiskFreeSpaceEx"_n,
     GetFunction(New<FunctionTemplate>(GetDiskFreeSpaceEx)).ToLocalChecked());
+  Nan::Set(target, "GetVolumePathName"_n,
+    GetFunction(New<FunctionTemplate>(GetVolumePathName)).ToLocalChecked());
   Nan::Set(target, "ShellExecuteEx"_n,
     GetFunction(New<FunctionTemplate>(ShellExecuteEx)).ToLocalChecked());
   Nan::Set(target, "GetPrivateProfileSection"_n,
