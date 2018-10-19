@@ -9,6 +9,13 @@ export function SetFileAttributes(filePath: string, attributes: FILE_ATTRIBUTES_
 // query the available disk space (in bytes) on the specified path
 export function GetDiskFreeSpaceEx(filePath: string): { total: number, free: number, freeToCaller: number };
 
+// get the volume path for the specified file path
+// This will usually be something like c:\ or d:\ but since ntfs supports mounting drives to subdirectories it could also
+// be c:\mount\d for example.
+// Please note: The path specified needs to be an existing file, otherwise the resolution appears to fall back to just
+// returning tghe drive letter.
+export function GetVolumePathName(filePath: string): string;
+
 export type ShellExecuteVerb = 'edit' | 'explore' | 'find' | 'open' | 'print' | 'properties' | 'runas';
 export type ShellExecuteShow = 'hide' | 'maximize' | 'minimize' | 'restore' | 'show' | 'showdefault'
                              | 'showminimized' | 'showminnoactive' | 'showna' | 'shownoactivate' | 'shownormal';
