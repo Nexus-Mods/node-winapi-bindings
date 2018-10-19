@@ -13,6 +13,7 @@ This module is windows-only, when writing cross-platform applications, wrap the 
 - ShellExecuteEx
 - GetPrivateProfileSection
 - GetPrivateProfileSectionNames
+- GetPrivateProfileString
 - WritePrivateProfileString
 
 - WithRegOpen (wrapper for RegOpenKeyEx and RegCloseKey)

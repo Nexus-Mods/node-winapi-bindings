@@ -33,6 +33,7 @@ export function ShellExecuteEx(options: ShellExecuteOptions): void;
 
 export function GetPrivateProfileSection(section: string, fileName: string);
 export function GetPrivateProfileSectionNames(fileName: string);
+export function GetPrivateProfileString(section: string, key: string, defaultValue: string, fileName: string);
 export function WritePrivateProfileString(section: string, key: string, value: string, fileName: string);
 
 export type REGISTRY_HIVE = 'HKEY_CLASSES_ROOT' | 'HKEY_CURRENT_CONFIG' | 'HKEY_CURRENT_USER' | 'HKEY_LOCAL_MACHINE' | 'HKEY_USERS';

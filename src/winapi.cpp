@@ -258,14 +258,12 @@ NAN_METHOD(GetPrivateProfileSection) {
       valLength = wcslen(eqPos);
       lastValue = New<String>(toMB(eqPos + 1, CodePage::UTF8, valLength - 1)).ToLocalChecked();
       ptr = eqPos + valLength + 1;
+      result->Set(lastKey, lastValue);
     }
     else {
-      valLength = wcslen(ptr);
-      lastValue = String::Concat(String::Concat(lastValue, " "_n), New<String>(toMB(ptr, CodePage::UTF8, valLength)).ToLocalChecked());
-      ptr += valLength + 1;
+      // ignore all lines that contain no equal sign
+      ptr += wcslen(ptr) + 1;
     }
-
-    result->Set(lastKey, lastValue);
   }
 
   info.GetReturnValue().Set(result);
@@ -303,6 +301,48 @@ NAN_METHOD(GetPrivateProfileSectionNames) {
   DWORD charCount = ::GetPrivateProfileSectionNamesW(buffer.get(), size,
     toWC(*fileName, CodePage::UTF8, fileName.length()).c_str());
 
+  info.GetReturnValue().Set(convertMultiSZ(buffer.get(), charCount));
+}
+
+NAN_METHOD(GetPrivateProfileString) {
+  Isolate* isolate = Isolate::GetCurrent();
+
+  if (info.Length() != 4) {
+    Nan::ThrowError("Expected one parameter (section, key, default, fileName)");
+    return;
+  }
+
+  std::wstring appName = toWC(info[0]);
+  std::wstring keyName = toWC(info[1]);
+  std::wstring defaultValue = toWC(info[2]);
+  std::wstring fileName = toWC(info[3]);
+
+  DWORD size = 32 * 1024;
+  std::unique_ptr<wchar_t[]> buffer(new wchar_t[size]);
+
+  bool repeat = true;
+
+  DWORD charCount = 0;
+
+  while (repeat) {
+    charCount = ::GetPrivateProfileStringW(
+      appName.c_str(), keyName.c_str(), defaultValue.c_str(),
+      buffer.get(), size, fileName.c_str());
+    if (charCount == 0) {
+      DWORD error = ::GetLastError();
+      if (error != ERROR_SUCCESS) {
+        isolate->ThrowException(WinApiException(::GetLastError(), "GetPrivateProfileString", toMB(fileName.c_str(), CodePage::UTF8, fileName.length()).c_str()));
+        return;
+      }
+    }
+    if (charCount < size - 1) {
+      repeat = false;
+    }
+    else {
+      size *= 2;
+      buffer.reset(new wchar_t[size]);
+    }
+  }
   info.GetReturnValue().Set(convertMultiSZ(buffer.get(), charCount));
 }
 
@@ -567,6 +607,9 @@ NAN_MODULE_INIT(Init) {
     GetFunction(New<FunctionTemplate>(GetPrivateProfileSection)).ToLocalChecked());
   Nan::Set(target, "GetPrivateProfileSectionNames"_n,
     GetFunction(New<FunctionTemplate>(GetPrivateProfileSectionNames)).ToLocalChecked());
+  Nan::Set(target, "GetPrivateProfileString"_n,
+    GetFunction(New<FunctionTemplate>(GetPrivateProfileString)).ToLocalChecked());
+
   Nan::Set(target, "WritePrivateProfileString"_n,
     GetFunction(New<FunctionTemplate>(WritePrivateProfileString)).ToLocalChecked());
 
