@@ -404,6 +404,7 @@ NAN_METHOD(WritePrivateProfileString) {
 
     if (!res) {
       isolate->ThrowException(WinApiException(::GetLastError(), "WritePrivateProfileString", *fileNameV8));
+      return;
     }
   }
   catch (const std::exception &e) {
@@ -439,6 +440,7 @@ NAN_METHOD(WithRegOpen) {
     LSTATUS res = ::RegOpenKeyExW(iter->second, path.c_str(), 0, KEY_READ, &key);
     if (res != ERROR_SUCCESS) {
       isolate->ThrowException(WinApiException(res, "WithRegOpen", *pathV8));
+      return;
     }
 
     auto buf = CopyBuffer(reinterpret_cast<char*>(&key), sizeof(HKEY)).ToLocalChecked();
@@ -511,6 +513,7 @@ NAN_METHOD(RegGetValue) {
     LSTATUS res = ::RegGetValueW(key, path.c_str(), value.c_str(), RRF_RT_ANY, &type, nullptr, &dataSize);
     if (res != ERROR_SUCCESS) {
       isolate->ThrowException(WinApiException(res, "RegGetValue", *pathV8));
+      return;
     }
 
     std::shared_ptr<uint8_t[]> buffer(new uint8_t[dataSize]);
@@ -519,6 +522,7 @@ NAN_METHOD(RegGetValue) {
 
     if (res != ERROR_SUCCESS) {
       isolate->ThrowException(WinApiException(res, "RegGetValue", *pathV8));
+      return;
     }
 
     Local<Object> result = New<Object>();
@@ -583,6 +587,7 @@ NAN_METHOD(RegEnumKeys) {
     LSTATUS res = RegQueryInfoKey(key, nullptr, nullptr, nullptr, &numSubkeys, &maxSubkeyLen, &maxClassLen, nullptr, nullptr, nullptr, nullptr, nullptr);
     if (res != ERROR_SUCCESS) {
       isolate->ThrowException(WinApiException(res, "RegEnumKeys"));
+      return;
     }
 
     Local<Array> result = New<Array>();
@@ -595,6 +600,7 @@ NAN_METHOD(RegEnumKeys) {
       res = ::RegEnumKeyExW(key, i, keyBuffer.get(), &keyLen, nullptr, classBuffer.get(), &classLen, &lastWritten);
       if (res != ERROR_SUCCESS) {
         isolate->ThrowException(WinApiException(res, "RegEnumKeys"));
+        return;
       }
 
       Local<Object> item = New<Object>();
@@ -628,6 +634,7 @@ NAN_METHOD(RegEnumValues) {
     LSTATUS res = RegQueryInfoKey(key, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, &numValues, &maxKeyLen, nullptr, nullptr, nullptr);
     if (res != ERROR_SUCCESS) {
       isolate->ThrowException(WinApiException(res, "RegEnumValues"));
+      return;
     }
 
     Local<Array> result = New<Array>();
@@ -638,6 +645,7 @@ NAN_METHOD(RegEnumValues) {
       res = ::RegEnumValueW(key, i, keyBuffer.get(), &keyLen, nullptr, &type, nullptr, nullptr);
       if (res != ERROR_SUCCESS) {
         isolate->ThrowException(WinApiException(res, "RegEnumValues"));
+        return;
       }
 
       Local<Object> item = New<Object>();
