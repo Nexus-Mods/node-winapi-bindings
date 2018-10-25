@@ -84,70 +84,84 @@ DWORD mapAttributes(Local<Array> input) {
 
 NAN_METHOD(SetFileAttributes) {
   Isolate* isolate = Isolate::GetCurrent();
+  try {
+    if (info.Length() != 2) {
+      Nan::ThrowError("Expected two parameters (path, attributes)");
+      return;
+    }
 
-  if (info.Length() != 2) {
-    Nan::ThrowError("Expected two parameters (path, attributes)");
-    return;
+    String::Utf8Value pathV8(info[0]->ToString());
+    std::wstring path = toWC(*pathV8, CodePage::UTF8, pathV8.length());
+    Local<Array> attributes = Local<Array>::Cast(info[1]);
+
+    if (!::SetFileAttributesW(path.c_str(), mapAttributes(attributes))) {
+      isolate->ThrowException(WinApiException(::GetLastError(), "SetFileAttributes", *pathV8));
+      return;
+    }
   }
-
-  String::Utf8Value pathV8(info[0]->ToString());
-  std::wstring path = toWC(*pathV8, CodePage::UTF8, pathV8.length());
-  Local<Array> attributes = Local<Array>::Cast(info[1]);
-
-  if (!::SetFileAttributesW(path.c_str(), mapAttributes(attributes))) {
-    isolate->ThrowException(WinApiException(::GetLastError(), "SetFileAttributes", *pathV8));
-    return;
+  catch (const std::exception &e) {
+    Nan::ThrowError(e.what());
   }
 }
 
 NAN_METHOD(GetDiskFreeSpaceEx) {
   Isolate* isolate = Isolate::GetCurrent();
 
-  if (info.Length() != 1) {
-    Nan::ThrowError("Expected one parameter (path)");
-    return;
+  try {
+    if (info.Length() != 1) {
+      Nan::ThrowError("Expected one parameter (path)");
+      return;
+    }
+
+    String::Utf8Value pathV8(info[0]->ToString());
+    std::wstring path = toWC(*pathV8, CodePage::UTF8, pathV8.length());
+
+    ULARGE_INTEGER freeBytesAvailableToCaller;
+    ULARGE_INTEGER totalNumberOfBytes;
+    ULARGE_INTEGER totalNumberOfFreeBytes;
+
+    if (!::GetDiskFreeSpaceExW(path.c_str(),
+      &freeBytesAvailableToCaller,
+      &totalNumberOfBytes,
+      &totalNumberOfFreeBytes)) {
+      isolate->ThrowException(WinApiException(::GetLastError(), "GetDiskFreeSpaceEx", *pathV8));
+      return;
+    }
+
+    Local<Object> result = New<Object>();
+    result->Set("total"_n, New<Number>(static_cast<double>(totalNumberOfBytes.QuadPart)));
+    result->Set("free"_n, New<Number>(static_cast<double>(totalNumberOfFreeBytes.QuadPart)));
+    result->Set("freeToCaller"_n, New<Number>(static_cast<double>(freeBytesAvailableToCaller.QuadPart)));
+
+    info.GetReturnValue().Set(result);
   }
-
-  String::Utf8Value pathV8(info[0]->ToString());
-  std::wstring path = toWC(*pathV8, CodePage::UTF8, pathV8.length());
-
-  ULARGE_INTEGER freeBytesAvailableToCaller;
-  ULARGE_INTEGER totalNumberOfBytes;
-  ULARGE_INTEGER totalNumberOfFreeBytes;
-
-  if (!::GetDiskFreeSpaceExW(path.c_str(),
-                             &freeBytesAvailableToCaller,
-                             &totalNumberOfBytes,
-                             &totalNumberOfFreeBytes)) {
-    isolate->ThrowException(WinApiException(::GetLastError(), "GetDiskFreeSpaceEx", *pathV8));
-    return;
+  catch (const std::exception &e) {
+    Nan::ThrowError(e.what());
   }
-
-  Local<Object> result = New<Object>();
-  result->Set("total"_n, New<Number>(static_cast<double>(totalNumberOfBytes.QuadPart)));
-  result->Set("free"_n, New<Number>(static_cast<double>(totalNumberOfFreeBytes.QuadPart)));
-  result->Set("freeToCaller"_n, New<Number>(static_cast<double>(freeBytesAvailableToCaller.QuadPart)));
-
-  info.GetReturnValue().Set(result);
 }
 
 NAN_METHOD(GetVolumePathName) {
   Isolate* isolate = Isolate::GetCurrent();
 
-  if (info.Length() != 1) {
-    Nan::ThrowError("Expected one parameter (path)");
-    return;
+  try {
+    if (info.Length() != 1) {
+      Nan::ThrowError("Expected one parameter (path)");
+      return;
+    }
+
+    std::wstring path = toWC(info[0]);
+
+    wchar_t buffer[MAX_PATH];
+    if (!::GetVolumePathNameW(path.c_str(), buffer, MAX_PATH)) {
+      isolate->ThrowException(WinApiException(::GetLastError(), "GetDiskFreeSpaceEx", toMB(path.c_str(), CodePage::UTF8, path.length()).c_str()));
+      return;
+    }
+
+    info.GetReturnValue().Set(New<String>(toMB(buffer, CodePage::UTF8, (std::numeric_limits<size_t>::max)())).ToLocalChecked());
   }
-
-  std::wstring path = toWC(info[0]);
-
-  wchar_t buffer[MAX_PATH];
-  if (!::GetVolumePathNameW(path.c_str(), buffer, MAX_PATH)) {
-    isolate->ThrowException(WinApiException(::GetLastError(), "GetDiskFreeSpaceEx", toMB(path.c_str(), CodePage::UTF8, path.length()).c_str()));
-    return;
+  catch (const std::exception &e) {
+    Nan::ThrowError(e.what());
   }
-
-  info.GetReturnValue().Set(New<String>(toMB(buffer, CodePage::UTF8, (std::numeric_limits<size_t>::max)())).ToLocalChecked());
 }
 
 
@@ -169,104 +183,114 @@ NAN_METHOD(ShellExecuteEx) {
 
   Isolate *isolate = Isolate::GetCurrent();
 
-  if (info.Length() != 1) {
-    Nan::ThrowError("Expected one parameter (options)");
-    return;
-  }
-
-  Local<Object> args(info[0]->ToObject());
-
-  if (!args->Has("file"_n) || !args->Has("show"_n)) {
-    Nan::ThrowError("Parameter missing (required: file, show)");
-    return;
-  }
-
-  // important: has to be a container that doesn't invalidate iterators on insertion (like vector would)
-  std::list<std::wstring> buffers;
-
-  auto assignParameter = [&args, &buffers](LPCWSTR &target, const Local<Value> &key) {
-    if (args->Has(key)) {
-      String::Utf8Value value(args->Get(key)->ToString());
-      buffers.push_back(toWC(*value, CodePage::UTF8, value.length()));
-      target = buffers.rbegin()->c_str();
+  try {
+    if (info.Length() != 1) {
+      Nan::ThrowError("Expected one parameter (options)");
+      return;
     }
-    else {
-      target = nullptr;
+
+    Local<Object> args(info[0]->ToObject());
+
+    if (!args->Has("file"_n) || !args->Has("show"_n)) {
+      Nan::ThrowError("Parameter missing (required: file, show)");
+      return;
     }
-  };
 
-  SHELLEXECUTEINFOW execInfo;
-  ZeroMemory(&execInfo, sizeof(SHELLEXECUTEINFOW));
-  execInfo.cbSize = sizeof(SHELLEXECUTEINFO);
+    // important: has to be a container that doesn't invalidate iterators on insertion (like vector would)
+    std::list<std::wstring> buffers;
 
-  execInfo.fMask = 0;
-  execInfo.hwnd = nullptr;
-  execInfo.hInstApp = nullptr;
+    auto assignParameter = [&args, &buffers](LPCWSTR &target, const Local<Value> &key) {
+      if (args->Has(key)) {
+        String::Utf8Value value(args->Get(key)->ToString());
+        buffers.push_back(toWC(*value, CodePage::UTF8, value.length()));
+        target = buffers.rbegin()->c_str();
+      }
+      else {
+        target = nullptr;
+      }
+    };
 
-  assignParameter(execInfo.lpVerb, "verb"_n);
-  assignParameter(execInfo.lpFile, "file"_n);
-  assignParameter(execInfo.lpDirectory, "directory"_n);
-  assignParameter(execInfo.lpParameters, "parameters"_n);
+    SHELLEXECUTEINFOW execInfo;
+    ZeroMemory(&execInfo, sizeof(SHELLEXECUTEINFOW));
+    execInfo.cbSize = sizeof(SHELLEXECUTEINFO);
 
-  v8::String::Utf8Value show(args->Get("show"_n)->ToString());
-  auto iter = showFlagMap.find(*show);
-  if (iter == showFlagMap.end()) {
-    Nan::ThrowRangeError("Invalid show flag");
-    return;
+    execInfo.fMask = 0;
+    execInfo.hwnd = nullptr;
+    execInfo.hInstApp = nullptr;
+
+    assignParameter(execInfo.lpVerb, "verb"_n);
+    assignParameter(execInfo.lpFile, "file"_n);
+    assignParameter(execInfo.lpDirectory, "directory"_n);
+    assignParameter(execInfo.lpParameters, "parameters"_n);
+
+    v8::String::Utf8Value show(args->Get("show"_n)->ToString());
+    auto iter = showFlagMap.find(*show);
+    if (iter == showFlagMap.end()) {
+      Nan::ThrowRangeError("Invalid show flag");
+      return;
+    }
+    execInfo.nShow = iter->second;
+
+
+    if (!::ShellExecuteExW(&execInfo)) {
+      std::string fileName = toMB(execInfo.lpFile, CodePage::UTF8, wcslen(execInfo.lpFile));
+      isolate->ThrowException(WinApiException(::GetLastError(), "ShellExecuteEx", fileName.c_str()));
+      return;
+    }
   }
-  execInfo.nShow = iter->second;
-
-
-  if (!::ShellExecuteExW(&execInfo)) {
-    std::string fileName = toMB(execInfo.lpFile, CodePage::UTF8, wcslen(execInfo.lpFile));
-    isolate->ThrowException(WinApiException(::GetLastError(), "ShellExecuteEx", fileName.c_str()));
-    return;
+  catch (const std::exception &e) {
+    Nan::ThrowError(e.what());
   }
 }
 
 NAN_METHOD(GetPrivateProfileSection) {
   Isolate* isolate = Isolate::GetCurrent();
 
-  if (info.Length() != 2) {
-    Nan::ThrowError("Expected two parameters (section, fileName)");
-    return;
-  }
-
-  String::Utf8Value appNameV8(info[0]->ToString());
-  String::Utf8Value fileNameV8(info[1]->ToString());
-
-  std::wstring appName = toWC(*appNameV8, CodePage::UTF8, appNameV8.length());
-  std::wstring fileName = toWC(*fileNameV8, CodePage::UTF8, fileNameV8.length());
-
-  DWORD size = 32 * 1024;
-  std::unique_ptr<wchar_t[]> buffer(new wchar_t[size]);
-
-  DWORD charCount = ::GetPrivateProfileSectionW(appName.c_str(), buffer.get(), size, fileName.c_str());
-
-  Local<Object> result = New<Object>();
-  wchar_t *start = buffer.get();
-  wchar_t *ptr = start;
-  // double check. the list is supposed to end on a double zero termination but to ensure we don't overrun
-  // the buffer, also verify we don't exceed the character count
-  Local<String> lastKey;
-  Local<String> lastValue;
-  while ((*ptr != '\0') && ((ptr - start) < charCount)) {
-    wchar_t *eqPos = wcschr(ptr, L'=');
-    size_t valLength;
-    if (eqPos != nullptr) {
-      lastKey = New<String>(toMB(ptr, CodePage::UTF8, eqPos - ptr)).ToLocalChecked();
-      valLength = wcslen(eqPos);
-      lastValue = New<String>(toMB(eqPos + 1, CodePage::UTF8, valLength - 1)).ToLocalChecked();
-      ptr = eqPos + valLength + 1;
-      result->Set(lastKey, lastValue);
+  try {
+    if (info.Length() != 2) {
+      Nan::ThrowError("Expected two parameters (section, fileName)");
+      return;
     }
-    else {
-      // ignore all lines that contain no equal sign
-      ptr += wcslen(ptr) + 1;
-    }
-  }
 
-  info.GetReturnValue().Set(result);
+    String::Utf8Value appNameV8(info[0]->ToString());
+    String::Utf8Value fileNameV8(info[1]->ToString());
+
+    std::wstring appName = toWC(*appNameV8, CodePage::UTF8, appNameV8.length());
+    std::wstring fileName = toWC(*fileNameV8, CodePage::UTF8, fileNameV8.length());
+
+    DWORD size = 32 * 1024;
+    std::unique_ptr<wchar_t[]> buffer(new wchar_t[size]);
+
+    DWORD charCount = ::GetPrivateProfileSectionW(appName.c_str(), buffer.get(), size, fileName.c_str());
+
+    Local<Object> result = New<Object>();
+    wchar_t *start = buffer.get();
+    wchar_t *ptr = start;
+    // double check. the list is supposed to end on a double zero termination but to ensure we don't overrun
+    // the buffer, also verify we don't exceed the character count
+    Local<String> lastKey;
+    Local<String> lastValue;
+    while ((*ptr != '\0') && ((ptr - start) < charCount)) {
+      wchar_t *eqPos = wcschr(ptr, L'=');
+      size_t valLength;
+      if (eqPos != nullptr) {
+        lastKey = New<String>(toMB(ptr, CodePage::UTF8, eqPos - ptr)).ToLocalChecked();
+        valLength = wcslen(eqPos);
+        lastValue = New<String>(toMB(eqPos + 1, CodePage::UTF8, valLength - 1)).ToLocalChecked();
+        ptr = eqPos + valLength + 1;
+        result->Set(lastKey, lastValue);
+      }
+      else {
+        // ignore all lines that contain no equal sign
+        ptr += wcslen(ptr) + 1;
+      }
+    }
+
+    info.GetReturnValue().Set(result);
+  }
+  catch (const std::exception &e) {
+    Nan::ThrowError(e.what());
+  }
 }
 
 Local<Array> convertMultiSZ(wchar_t *input, DWORD maxLength) {
@@ -288,87 +312,102 @@ Local<Array> convertMultiSZ(wchar_t *input, DWORD maxLength) {
 NAN_METHOD(GetPrivateProfileSectionNames) {
   Isolate* isolate = Isolate::GetCurrent();
 
-  if (info.Length() != 1) {
-    Nan::ThrowError("Expected one parameter (fileName)");
-    return;
+  try {
+    if (info.Length() != 1) {
+      Nan::ThrowError("Expected one parameter (fileName)");
+      return;
+    }
+
+    String::Utf8Value fileName(info[0]->ToString());
+
+    DWORD size = 32 * 1024;
+    std::unique_ptr<wchar_t[]> buffer(new wchar_t[size]);
+
+    DWORD charCount = ::GetPrivateProfileSectionNamesW(buffer.get(), size,
+      toWC(*fileName, CodePage::UTF8, fileName.length()).c_str());
+
+    info.GetReturnValue().Set(convertMultiSZ(buffer.get(), charCount));
   }
-
-  String::Utf8Value fileName(info[0]->ToString());
-
-  DWORD size = 32 * 1024;
-  std::unique_ptr<wchar_t[]> buffer(new wchar_t[size]);
-
-  DWORD charCount = ::GetPrivateProfileSectionNamesW(buffer.get(), size,
-    toWC(*fileName, CodePage::UTF8, fileName.length()).c_str());
-
-  info.GetReturnValue().Set(convertMultiSZ(buffer.get(), charCount));
+  catch (const std::exception &e) {
+    Nan::ThrowError(e.what());
+  }
 }
 
 NAN_METHOD(GetPrivateProfileString) {
   Isolate* isolate = Isolate::GetCurrent();
 
-  if (info.Length() != 4) {
-    Nan::ThrowError("Expected one parameter (section, key, default, fileName)");
-    return;
-  }
+  try {
+    if (info.Length() != 4) {
+      Nan::ThrowError("Expected one parameter (section, key, default, fileName)");
+      return;
+    }
 
-  std::wstring appName = toWC(info[0]);
-  std::wstring keyName = toWC(info[1]);
-  std::wstring defaultValue = toWC(info[2]);
-  std::wstring fileName = toWC(info[3]);
+    std::wstring appName = toWC(info[0]);
+    std::wstring keyName = toWC(info[1]);
+    std::wstring defaultValue = toWC(info[2]);
+    std::wstring fileName = toWC(info[3]);
 
-  DWORD size = 32 * 1024;
-  std::unique_ptr<wchar_t[]> buffer(new wchar_t[size]);
+    DWORD size = 32 * 1024;
+    std::unique_ptr<wchar_t[]> buffer(new wchar_t[size]);
 
-  bool repeat = true;
+    bool repeat = true;
 
-  DWORD charCount = 0;
+    DWORD charCount = 0;
 
-  while (repeat) {
-    charCount = ::GetPrivateProfileStringW(
-      appName.c_str(), keyName.c_str(), defaultValue.c_str(),
-      buffer.get(), size, fileName.c_str());
-    if (charCount == 0) {
-      DWORD error = ::GetLastError();
-      if (error != ERROR_SUCCESS) {
-        isolate->ThrowException(WinApiException(::GetLastError(), "GetPrivateProfileString", toMB(fileName.c_str(), CodePage::UTF8, fileName.length()).c_str()));
-        return;
+    while (repeat) {
+      charCount = ::GetPrivateProfileStringW(
+        appName.c_str(), keyName.c_str(), defaultValue.c_str(),
+        buffer.get(), size, fileName.c_str());
+      if (charCount == 0) {
+        DWORD error = ::GetLastError();
+        if (error != ERROR_SUCCESS) {
+          isolate->ThrowException(WinApiException(::GetLastError(), "GetPrivateProfileString", toMB(fileName.c_str(), CodePage::UTF8, fileName.length()).c_str()));
+          return;
+        }
+      }
+      if (charCount < size - 1) {
+        repeat = false;
+      }
+      else {
+        size *= 2;
+        buffer.reset(new wchar_t[size]);
       }
     }
-    if (charCount < size - 1) {
-      repeat = false;
-    }
-    else {
-      size *= 2;
-      buffer.reset(new wchar_t[size]);
-    }
+    info.GetReturnValue().Set(convertMultiSZ(buffer.get(), charCount));
   }
-  info.GetReturnValue().Set(convertMultiSZ(buffer.get(), charCount));
+  catch (const std::exception &e) {
+    Nan::ThrowError(e.what());
+  }
 }
 
 NAN_METHOD(WritePrivateProfileString) {
   Isolate* isolate = Isolate::GetCurrent();
 
-  if (info.Length() != 4) {
-    Nan::ThrowError("Expected four parameters (section, key, value, fileName)");
-    return;
-  }
+  try {
+    if (info.Length() != 4) {
+      Nan::ThrowError("Expected four parameters (section, key, value, fileName)");
+      return;
+    }
 
-  String::Utf8Value appNameV8(info[0]->ToString());
-  String::Utf8Value keyNameV8(info[1]->ToString());
-  String::Utf8Value valueV8(info[2]->ToString());
-  String::Utf8Value fileNameV8(info[3]->ToString());
+    String::Utf8Value appNameV8(info[0]->ToString());
+    String::Utf8Value keyNameV8(info[1]->ToString());
+    String::Utf8Value valueV8(info[2]->ToString());
+    String::Utf8Value fileNameV8(info[3]->ToString());
 
-  std::wstring appName = toWC(*appNameV8, CodePage::UTF8, appNameV8.length());
-  std::wstring keyName = toWC(*keyNameV8, CodePage::UTF8, keyNameV8.length());
-  std::wstring value = info[2]->IsNullOrUndefined() ? L"" : toWC(*valueV8, CodePage::UTF8, valueV8.length());
-  std::wstring fileName = toWC(*fileNameV8, CodePage::UTF8, fileNameV8.length());
+    std::wstring appName = toWC(*appNameV8, CodePage::UTF8, appNameV8.length());
+    std::wstring keyName = toWC(*keyNameV8, CodePage::UTF8, keyNameV8.length());
+    std::wstring value = info[2]->IsNullOrUndefined() ? L"" : toWC(*valueV8, CodePage::UTF8, valueV8.length());
+    std::wstring fileName = toWC(*fileNameV8, CodePage::UTF8, fileNameV8.length());
 
-  BOOL res = ::WritePrivateProfileStringW(appName.c_str(), keyName.c_str(),
+    BOOL res = ::WritePrivateProfileStringW(appName.c_str(), keyName.c_str(),
       info[2]->IsNullOrUndefined() ? nullptr : value.c_str(), fileName.c_str());
 
-  if (!res) {
-    isolate->ThrowException(WinApiException(::GetLastError(), "WritePrivateProfileString", *fileNameV8));
+    if (!res) {
+      isolate->ThrowException(WinApiException(::GetLastError(), "WritePrivateProfileString", *fileNameV8));
+    }
+  }
+  catch (const std::exception &e) {
+    Nan::ThrowError(e.what());
   }
 }
 
@@ -383,31 +422,36 @@ static const std::unordered_map<std::string, HKEY> hkeyMap{
 NAN_METHOD(WithRegOpen) {
   Isolate* isolate = Isolate::GetCurrent();
 
-  if (info.Length() != 3) {
-    Nan::ThrowError("Expected three parameters (hive, path, callback)");
-    return;
+  try {
+    if (info.Length() != 3) {
+      Nan::ThrowError("Expected three parameters (hive, path, callback)");
+      return;
+    }
+
+    String::Utf8Value hiveV8(info[0]->ToString());
+    String::Utf8Value pathV8(info[1]->ToString());
+    v8::Local<v8::Function> cb = info[2].As<v8::Function>();
+
+    auto iter = hkeyMap.find(*hiveV8);
+    std::wstring path = toWC(*pathV8, CodePage::UTF8, pathV8.length());
+
+    HKEY key;
+    LSTATUS res = ::RegOpenKeyExW(iter->second, path.c_str(), 0, KEY_READ, &key);
+    if (res != ERROR_SUCCESS) {
+      isolate->ThrowException(WinApiException(res, "WithRegOpen", *pathV8));
+    }
+
+    auto buf = CopyBuffer(reinterpret_cast<char*>(&key), sizeof(HKEY)).ToLocalChecked();
+    Local<Value> argv[1] = { buf };
+    AsyncResource async("callback");
+    v8::Local<v8::Object> target = New<v8::Object>();
+    async.runInAsyncScope(target, cb, 1, argv);
+
+    ::RegCloseKey(key);
   }
-
-  String::Utf8Value hiveV8(info[0]->ToString());
-  String::Utf8Value pathV8(info[1]->ToString());
-  v8::Local<v8::Function> cb = info[2].As<v8::Function>();
-
-  auto iter = hkeyMap.find(*hiveV8);
-  std::wstring path = toWC(*pathV8, CodePage::UTF8, pathV8.length());
-
-  HKEY key;
-  LSTATUS res = ::RegOpenKeyExW(iter->second, path.c_str(), 0, KEY_READ, &key);
-  if (res != ERROR_SUCCESS) {
-    isolate->ThrowException(WinApiException(res, "WithRegOpen", *pathV8));
+  catch (const std::exception &e) {
+    Nan::ThrowError(e.what());
   }
-
-  auto buf = CopyBuffer(reinterpret_cast<char*>(&key), sizeof(HKEY)).ToLocalChecked();
-  Local<Value> argv[1] = { buf };
-  AsyncResource async("callback");
-  v8::Local<v8::Object> target = New<v8::Object>();
-  async.runInAsyncScope(target, cb, 1, argv);
-
-  ::RegCloseKey(key);
 }
 
 Local<String> regTypeToString(DWORD type) {
@@ -439,159 +483,174 @@ uint64_t toTimestamp(FILETIME ft)
 NAN_METHOD(RegGetValue) {
   Isolate* isolate = Isolate::GetCurrent();
 
-  if (info.Length() != 3) {
-    Nan::ThrowError("Expected three parameters (key, subkey, value)");
-    return;
+  try {
+    if (info.Length() != 3) {
+      Nan::ThrowError("Expected three parameters (key, subkey, value)");
+      return;
+    }
+
+    HKEY key;
+    if (info[0]->IsString()) {
+      String::Utf8Value hkeyStr(info[0]->ToString());
+      auto iter = hkeyMap.find(*hkeyStr);
+      key = iter->second;
+    }
+    else {
+      memcpy(&key, node::Buffer::Data(info[0]), sizeof(HKEY));
+    }
+
+    String::Utf8Value pathV8(info[1]->ToString());
+    String::Utf8Value valueV8(info[2]->ToString());
+
+    std::wstring path = toWC(*pathV8, CodePage::UTF8, pathV8.length());
+    std::wstring value = toWC(*valueV8, CodePage::UTF8, valueV8.length());
+
+    DWORD type;
+    DWORD dataSize = 0;
+
+    LSTATUS res = ::RegGetValueW(key, path.c_str(), value.c_str(), RRF_RT_ANY, &type, nullptr, &dataSize);
+    if (res != ERROR_SUCCESS) {
+      isolate->ThrowException(WinApiException(res, "RegGetValue", *pathV8));
+    }
+
+    std::shared_ptr<uint8_t[]> buffer(new uint8_t[dataSize]);
+
+    res = ::RegGetValueW(key, path.c_str(), value.c_str(), RRF_RT_ANY, &type, buffer.get(), &dataSize);
+
+    if (res != ERROR_SUCCESS) {
+      isolate->ThrowException(WinApiException(res, "RegGetValue", *pathV8));
+    }
+
+    Local<Object> result = New<Object>();
+    result->Set("type"_n, regTypeToString(type));
+
+    static auto valueKey = "value"_n;
+
+    switch (type) {
+      case REG_BINARY: {
+        result->Set(valueKey, NewBuffer(reinterpret_cast<char*>(buffer.get()), dataSize).ToLocalChecked());
+      } break;
+      case REG_DWORD: {
+        result->Set("value"_n, New<Number>(*reinterpret_cast<DWORD*>(buffer.get())));
+      } break;
+      case REG_DWORD_BIG_ENDIAN: {
+        union {
+          DWORD val;
+          char temp[4];
+        };
+        for (int i = 0; i < 4; ++i) {
+          temp[i] = buffer[3 - i];
+        }
+        result->Set(valueKey, New<Number>(val));
+      } break;
+      case REG_MULTI_SZ: {
+        result->Set(valueKey, convertMultiSZ(reinterpret_cast<wchar_t*>(buffer.get()), dataSize));
+      } break;
+      case REG_NONE: { } break;
+      case REG_QWORD: {
+        result->Set(valueKey, New<Number>(static_cast<double>(*reinterpret_cast<uint64_t*>(buffer.get()))));
+      } break;
+      case REG_SZ:
+      case REG_EXPAND_SZ:
+      case REG_LINK: {
+        const wchar_t *buf = reinterpret_cast<wchar_t*>(buffer.get());
+        result->Set("value"_n, New<String>(toMB(buf, CodePage::UTF8, (dataSize / sizeof(wchar_t)) - 1)).ToLocalChecked());
+      } break;
+    }
+
+    info.GetReturnValue().Set(result);
   }
-
-  HKEY key;
-  if (info[0]->IsString()) {
-    String::Utf8Value hkeyStr(info[0]->ToString());
-    auto iter = hkeyMap.find(*hkeyStr);
-    key = iter->second;
+  catch (const std::exception &e) {
+    Nan::ThrowError(e.what());
   }
-  else {
-    memcpy(&key, node::Buffer::Data(info[0]), sizeof(HKEY));
-  }
-
-  String::Utf8Value pathV8(info[1]->ToString());
-  String::Utf8Value valueV8(info[2]->ToString());
-
-  std::wstring path = toWC(*pathV8, CodePage::UTF8, pathV8.length());
-  std::wstring value = toWC(*valueV8, CodePage::UTF8, valueV8.length());
-
-  DWORD type;
-  DWORD dataSize = 0;
-
-  LSTATUS res = ::RegGetValueW(key, path.c_str(), value.c_str(), RRF_RT_ANY, &type, nullptr, &dataSize);
-  if (res != ERROR_SUCCESS) {
-    isolate->ThrowException(WinApiException(res, "RegGetValue", *pathV8));
-  }
-
-  std::shared_ptr<uint8_t[]> buffer(new uint8_t[dataSize]);
-
-  res = ::RegGetValueW(key, path.c_str(), value.c_str(), RRF_RT_ANY, &type, buffer.get(), &dataSize);
-
-  if (res != ERROR_SUCCESS) {
-    isolate->ThrowException(WinApiException(res, "RegGetValue", *pathV8));
-  }
-
-  Local<Object> result = New<Object>();
-  result->Set("type"_n, regTypeToString(type));
-
-  static auto valueKey = "value"_n;
-
-  switch (type) {
-    case REG_BINARY: {
-      result->Set(valueKey, NewBuffer(reinterpret_cast<char*>(buffer.get()), dataSize).ToLocalChecked());
-    } break;
-    case REG_DWORD: {
-      result->Set("value"_n, New<Number>(*reinterpret_cast<DWORD*>(buffer.get())));
-    } break;
-    case REG_DWORD_BIG_ENDIAN: {
-      union {
-        DWORD val;
-        char temp[4];
-      };
-      for (int i = 0; i < 4; ++i) {
-        temp[i] = buffer[3 - i];
-      }
-      result->Set(valueKey, New<Number>(val));
-    } break;
-    case REG_MULTI_SZ: {
-      result->Set(valueKey, convertMultiSZ(reinterpret_cast<wchar_t*>(buffer.get()), dataSize));
-    } break;
-    case REG_NONE: { } break;
-    case REG_QWORD: {
-      result->Set(valueKey, New<Number>(static_cast<double>(*reinterpret_cast<uint64_t*>(buffer.get()))));
-    } break;
-    case REG_SZ:
-    case REG_EXPAND_SZ:
-    case REG_LINK: {
-      const wchar_t *buf = reinterpret_cast<wchar_t*>(buffer.get());
-      result->Set("value"_n, New<String>(toMB(buf, CodePage::UTF8, (dataSize / sizeof(wchar_t)) - 1)).ToLocalChecked());
-    } break;
-  }
-
-  info.GetReturnValue().Set(result);
 }
 
 NAN_METHOD(RegEnumKeys) {
   Isolate* isolate = Isolate::GetCurrent();
 
-  if (info.Length() != 1) {
-    Nan::ThrowError("Expected one parameters (key)");
-    return;
-  }
+  try {
+    if (info.Length() != 1) {
+      Nan::ThrowError("Expected one parameters (key)");
+      return;
+    }
 
-  HKEY key;
-  memcpy(&key, node::Buffer::Data(info[0]), sizeof(HKEY));
+    HKEY key;
+    memcpy(&key, node::Buffer::Data(info[0]), sizeof(HKEY));
 
-  DWORD numSubkeys;
-  DWORD maxSubkeyLen;
-  DWORD maxClassLen;
-  LSTATUS res = RegQueryInfoKey(key, nullptr, nullptr, nullptr, &numSubkeys, &maxSubkeyLen, &maxClassLen, nullptr, nullptr, nullptr, nullptr, nullptr);
-  if (res != ERROR_SUCCESS) {
-    isolate->ThrowException(WinApiException(res, "RegEnumKeys"));
-  }
-
-  Local<Array> result = New<Array>();
-  std::shared_ptr<wchar_t[]> keyBuffer(new wchar_t[maxSubkeyLen + 1]);
-  std::shared_ptr<wchar_t[]> classBuffer(new wchar_t[maxClassLen + 1]);
-  for (DWORD i = 0; i < numSubkeys; ++i) {
-    DWORD keyLen = maxSubkeyLen + 1;
-    DWORD classLen = maxClassLen + 1;
-    FILETIME lastWritten;
-    res = ::RegEnumKeyExW(key, i, keyBuffer.get(), &keyLen, nullptr, classBuffer.get(), &classLen, &lastWritten);
+    DWORD numSubkeys;
+    DWORD maxSubkeyLen;
+    DWORD maxClassLen;
+    LSTATUS res = RegQueryInfoKey(key, nullptr, nullptr, nullptr, &numSubkeys, &maxSubkeyLen, &maxClassLen, nullptr, nullptr, nullptr, nullptr, nullptr);
     if (res != ERROR_SUCCESS) {
       isolate->ThrowException(WinApiException(res, "RegEnumKeys"));
     }
 
-    Local<Object> item = New<Object>();
-    item->Set("class"_n, New<String>(toMB(classBuffer.get(), CodePage::UTF8, classLen)).ToLocalChecked());
-    item->Set("key"_n, New<String>(toMB(keyBuffer.get(), CodePage::UTF8, keyLen)).ToLocalChecked());
-    item->Set("lastWritten"_n, New<Number>(static_cast<double>(toTimestamp(lastWritten))));
-    result->Set(i, item);
-  }
+    Local<Array> result = New<Array>();
+    std::shared_ptr<wchar_t[]> keyBuffer(new wchar_t[maxSubkeyLen + 1]);
+    std::shared_ptr<wchar_t[]> classBuffer(new wchar_t[maxClassLen + 1]);
+    for (DWORD i = 0; i < numSubkeys; ++i) {
+      DWORD keyLen = maxSubkeyLen + 1;
+      DWORD classLen = maxClassLen + 1;
+      FILETIME lastWritten;
+      res = ::RegEnumKeyExW(key, i, keyBuffer.get(), &keyLen, nullptr, classBuffer.get(), &classLen, &lastWritten);
+      if (res != ERROR_SUCCESS) {
+        isolate->ThrowException(WinApiException(res, "RegEnumKeys"));
+      }
 
-  info.GetReturnValue().Set(result);
+      Local<Object> item = New<Object>();
+      item->Set("class"_n, New<String>(toMB(classBuffer.get(), CodePage::UTF8, classLen)).ToLocalChecked());
+      item->Set("key"_n, New<String>(toMB(keyBuffer.get(), CodePage::UTF8, keyLen)).ToLocalChecked());
+      item->Set("lastWritten"_n, New<Number>(static_cast<double>(toTimestamp(lastWritten))));
+      result->Set(i, item);
+    }
+
+    info.GetReturnValue().Set(result);
+  }
+  catch (const std::exception &e) {
+    Nan::ThrowError(e.what());
+  }
 }
 
 NAN_METHOD(RegEnumValues) {
   Isolate* isolate = Isolate::GetCurrent();
 
-  if (info.Length() != 1) {
-    Nan::ThrowError("Expected one parameters (key)");
-    return;
-  }
+  try {
+    if (info.Length() != 1) {
+      Nan::ThrowError("Expected one parameters (key)");
+      return;
+    }
 
-  HKEY key;
-  memcpy(&key, node::Buffer::Data(info[0]), sizeof(HKEY));
+    HKEY key;
+    memcpy(&key, node::Buffer::Data(info[0]), sizeof(HKEY));
 
-  DWORD numValues;
-  DWORD maxKeyLen;
-  LSTATUS res = RegQueryInfoKey(key, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, &numValues, &maxKeyLen, nullptr, nullptr, nullptr);
-  if (res != ERROR_SUCCESS) {
-    isolate->ThrowException(WinApiException(res, "RegEnumValues"));
-  }
-
-  Local<Array> result = New<Array>();
-  std::shared_ptr<wchar_t[]> keyBuffer(new wchar_t[maxKeyLen + 1]);
-  for (DWORD i = 0; i < numValues; ++i) {
-    DWORD keyLen = maxKeyLen + 1;
-    DWORD type;
-    res = ::RegEnumValueW(key, i, keyBuffer.get(), &keyLen, nullptr, &type, nullptr, nullptr);
+    DWORD numValues;
+    DWORD maxKeyLen;
+    LSTATUS res = RegQueryInfoKey(key, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, &numValues, &maxKeyLen, nullptr, nullptr, nullptr);
     if (res != ERROR_SUCCESS) {
       isolate->ThrowException(WinApiException(res, "RegEnumValues"));
     }
 
-    Local<Object> item = New<Object>();
-    item->Set("type"_n, regTypeToString(type));
-    item->Set("key"_n, New<String>(toMB(keyBuffer.get(), CodePage::UTF8, keyLen)).ToLocalChecked());
-    result->Set(i, item);
-  }
+    Local<Array> result = New<Array>();
+    std::shared_ptr<wchar_t[]> keyBuffer(new wchar_t[maxKeyLen + 1]);
+    for (DWORD i = 0; i < numValues; ++i) {
+      DWORD keyLen = maxKeyLen + 1;
+      DWORD type;
+      res = ::RegEnumValueW(key, i, keyBuffer.get(), &keyLen, nullptr, &type, nullptr, nullptr);
+      if (res != ERROR_SUCCESS) {
+        isolate->ThrowException(WinApiException(res, "RegEnumValues"));
+      }
 
-  info.GetReturnValue().Set(result);
+      Local<Object> item = New<Object>();
+      item->Set("type"_n, regTypeToString(type));
+      item->Set("key"_n, New<String>(toMB(keyBuffer.get(), CodePage::UTF8, keyLen)).ToLocalChecked());
+      result->Set(i, item);
+    }
+
+    info.GetReturnValue().Set(result);
+  }
+  catch (const std::exception &e) {
+    Nan::ThrowError(e.what());
+  }
 }
 
 NAN_MODULE_INIT(Init) {
