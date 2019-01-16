@@ -338,7 +338,7 @@ NAN_METHOD(GetPrivateProfileString) {
 
   try {
     if (info.Length() != 4) {
-      Nan::ThrowError("Expected one parameter (section, key, default, fileName)");
+      Nan::ThrowError("Expected four parameters (section, key, default, fileName)");
       return;
     }
 
