@@ -20,12 +20,15 @@ export type ShellExecuteVerb = 'edit' | 'explore' | 'find' | 'open' | 'print' | 
 export type ShellExecuteShow = 'hide' | 'maximize' | 'minimize' | 'restore' | 'show' | 'showdefault'
                              | 'showminimized' | 'showminnoactive' | 'showna' | 'shownoactivate' | 'shownormal';
 
+export type ShellExecuteMask = 'noasync' | 'flag_no_ui' | 'unicode' | 'no_console' | 'waitforinputidle';
+
 export interface ShellExecuteOptions {
   file: string;
   show: ShellExecuteShow;
   verb?: ShellExecuteVerb;
   directory?: string;
   parameters?: string;
+  mask?: Array<ShellExecuteMask | number>;
 }
 
 // execute external application

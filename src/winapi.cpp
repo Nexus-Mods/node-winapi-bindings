@@ -165,6 +165,22 @@ NAN_METHOD(GetVolumePathName) {
 }
 
 
+uint32_t translateExecuteMask(const std::string &name) {
+  static std::unordered_map<std::string, uint32_t> map{
+    { "noasync", SEE_MASK_NOASYNC },
+    { "flag_no_ui", SEE_MASK_FLAG_NO_UI },
+    { "unicode", SEE_MASK_UNICODE },
+    { "no_console", SEE_MASK_NO_CONSOLE },
+    { "waitforinputidle", SEE_MASK_WAITFORINPUTIDLE }
+  };
+
+  auto iter = map.find(name);
+  if (iter != map.end()) {
+    return iter->second;
+  }
+
+  return 0;
+}
 
 NAN_METHOD(ShellExecuteEx) {
   static const std::unordered_map<std::string, DWORD> showFlagMap{
@@ -215,6 +231,20 @@ NAN_METHOD(ShellExecuteEx) {
     execInfo.cbSize = sizeof(SHELLEXECUTEINFO);
 
     execInfo.fMask = 0;
+
+    if ((args->Has("mask"_n) && args->Get("mask"_n)->IsArray())) {
+      Local<Array> mask = Local<Array>::Cast(args->Get("mask"_n));
+      for (uint32_t i = 0; i < mask->Length(); ++i) {
+        Local<Value> val = mask->Get(i);
+        if (val->IsString()) {
+          execInfo.fMask |= translateExecuteMask(*Utf8String(val->ToString()));
+        }
+        else {
+          execInfo.fMask |= val->Uint32Value();
+        }
+      }
+    }
+
     execInfo.hwnd = nullptr;
     execInfo.hInstApp = nullptr;
 
