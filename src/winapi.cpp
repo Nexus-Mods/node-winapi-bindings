@@ -562,10 +562,10 @@ NAN_METHOD(RegGetValue) {
 
     switch (type) {
       case REG_BINARY: {
-        result->Set(valueKey, NewBuffer(reinterpret_cast<char*>(buffer.get()), dataSize).ToLocalChecked());
+        result->Set(valueKey, CopyBuffer(reinterpret_cast<char*>(buffer.get()), dataSize).ToLocalChecked());
       } break;
       case REG_DWORD: {
-        result->Set("value"_n, New<Number>(*reinterpret_cast<DWORD*>(buffer.get())));
+        result->Set(valueKey, New<Number>(*reinterpret_cast<DWORD*>(buffer.get())));
       } break;
       case REG_DWORD_BIG_ENDIAN: {
         union {
