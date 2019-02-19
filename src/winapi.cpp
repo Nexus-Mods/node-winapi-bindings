@@ -558,14 +558,13 @@ NAN_METHOD(RegGetValue) {
     Local<Object> result = New<Object>();
     result->Set("type"_n, regTypeToString(type));
 
-    static auto valueKey = "value"_n;
-
     switch (type) {
       case REG_BINARY: {
-        result->Set(valueKey, CopyBuffer(reinterpret_cast<char*>(buffer.get()), dataSize).ToLocalChecked());
+        result->Set("value"_n, CopyBuffer(reinterpret_cast<char*>(buffer.get()), dataSize).ToLocalChecked());
       } break;
       case REG_DWORD: {
-        result->Set(valueKey, New<Number>(*reinterpret_cast<DWORD*>(buffer.get())));
+        DWORD val = *reinterpret_cast<DWORD*>(buffer.get());
+        result->Set("value"_n, New<Number>(val));
       } break;
       case REG_DWORD_BIG_ENDIAN: {
         union {
@@ -575,14 +574,14 @@ NAN_METHOD(RegGetValue) {
         for (int i = 0; i < 4; ++i) {
           temp[i] = buffer[3 - i];
         }
-        result->Set(valueKey, New<Number>(val));
+        result->Set("value"_n, New<Number>(val));
       } break;
       case REG_MULTI_SZ: {
-        result->Set(valueKey, convertMultiSZ(reinterpret_cast<wchar_t*>(buffer.get()), dataSize));
+        result->Set("value"_n, convertMultiSZ(reinterpret_cast<wchar_t*>(buffer.get()), dataSize));
       } break;
       case REG_NONE: { } break;
       case REG_QWORD: {
-        result->Set(valueKey, New<Number>(static_cast<double>(*reinterpret_cast<uint64_t*>(buffer.get()))));
+        result->Set("value"_n, New<Number>(static_cast<double>(*reinterpret_cast<uint64_t*>(buffer.get()))));
       } break;
       case REG_SZ:
       case REG_EXPAND_SZ:
