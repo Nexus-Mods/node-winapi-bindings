@@ -1,6 +1,7 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <shellapi.h>
+#include <Shlobj.h>
 #include <string>
 #include <unordered_map>
 #include <list>
@@ -464,6 +465,10 @@ NAN_METHOD(WithRegOpen) {
     v8::Local<v8::Function> cb = info[2].As<v8::Function>();
 
     auto iter = hkeyMap.find(*hiveV8);
+    if (iter == hkeyMap.end()) {
+      Nan::ThrowError("Invalid hive specified");
+      return;
+    }
     std::wstring path = toWC(*pathV8, CodePage::UTF8, pathV8.length());
 
     HKEY key;
@@ -525,6 +530,10 @@ NAN_METHOD(RegGetValue) {
     if (info[0]->IsString()) {
       String::Utf8Value hkeyStr(info[0]->ToString());
       auto iter = hkeyMap.find(*hkeyStr);
+      if (iter == hkeyMap.end()) {
+        Nan::ThrowError("Invalid hive specified");
+        return;
+      }
       key = iter->second;
     }
     else {
@@ -690,6 +699,228 @@ NAN_METHOD(RegEnumValues) {
   }
 }
 
+static const std::unordered_map<std::string, DWORD> knownFolderFlags {
+  { "default", KF_FLAG_DEFAULT },
+  { "force_app_data_redirection", KF_FLAG_FORCE_APP_DATA_REDIRECTION },
+  { "return_filter_redirection_target", KF_FLAG_RETURN_FILTER_REDIRECTION_TARGET },
+  { "force_package_redirection", KF_FLAG_FORCE_PACKAGE_REDIRECTION },
+  { "no_package_redirection", KF_FLAG_NO_PACKAGE_REDIRECTION },
+  { "force_appcontainer_redirection", KF_FLAG_FORCE_APPCONTAINER_REDIRECTION },
+  { "no_appcontainer_redirection", KF_FLAG_NO_APPCONTAINER_REDIRECTION },
+  { "create", KF_FLAG_CREATE },
+  { "dont_verify", KF_FLAG_DONT_VERIFY },
+  { "dont_unexpand", KF_FLAG_DONT_UNEXPAND },
+  { "no_alias", KF_FLAG_NO_ALIAS },
+  { "init", KF_FLAG_INIT },
+  { "default_path", KF_FLAG_DEFAULT_PATH },
+  { "not_parent_relative", KF_FLAG_NOT_PARENT_RELATIVE },
+  { "simple_idlist", KF_FLAG_SIMPLE_IDLIST },
+  { "alias_only", KF_FLAG_ALIAS_ONLY }
+};
+
+static const std::unordered_map<std::string, REFKNOWNFOLDERID> knownFolders {
+  { "AccountPictures", FOLDERID_AccountPictures },
+  { "AddNewPrograms", FOLDERID_AddNewPrograms },
+  { "AdminTools", FOLDERID_AdminTools },
+  { "AllAppMods", FOLDERID_AllAppMods },
+  { "AppCaptures", FOLDERID_AppCaptures },
+  { "AppDataDesktop", FOLDERID_AppDataDesktop },
+  { "AppDataDocuments", FOLDERID_AppDataDocuments },
+  { "AppDataFavorites", FOLDERID_AppDataFavorites },
+  { "AppDataProgramData", FOLDERID_AppDataProgramData },
+  { "AppUpdates", FOLDERID_AppUpdates },
+  { "ApplicationShortcuts", FOLDERID_ApplicationShortcuts },
+  { "AppsFolder", FOLDERID_AppsFolder },
+  { "CDBurning", FOLDERID_CDBurning },
+  { "CameraRoll", FOLDERID_CameraRoll },
+  { "CameraRollLibrary", FOLDERID_CameraRollLibrary },
+  { "ChangeRemovePrograms", FOLDERID_ChangeRemovePrograms },
+  { "CommonAdminTools", FOLDERID_CommonAdminTools },
+  { "CommonOEMLinks", FOLDERID_CommonOEMLinks },
+  { "CommonPrograms", FOLDERID_CommonPrograms },
+  { "CommonStartMenu", FOLDERID_CommonStartMenu },
+  { "CommonStartMenuPlaces", FOLDERID_CommonStartMenuPlaces },
+  { "CommonStartup", FOLDERID_CommonStartup },
+  { "CommonTemplates", FOLDERID_CommonTemplates },
+  { "ComputerFolder", FOLDERID_ComputerFolder },
+  { "ConflictFolder", FOLDERID_ConflictFolder },
+  { "ConnectionsFolder", FOLDERID_ConnectionsFolder },
+  { "Contacts", FOLDERID_Contacts },
+  { "ControlPanelFolder", FOLDERID_ControlPanelFolder },
+  { "Cookies", FOLDERID_Cookies },
+  { "CurrentAppMods", FOLDERID_CurrentAppMods },
+  { "Desktop", FOLDERID_Desktop },
+  { "DevelopmentFiles", FOLDERID_DevelopmentFiles },
+  { "Device", FOLDERID_Device },
+  { "DeviceMetadataStore", FOLDERID_DeviceMetadataStore },
+  { "Documents", FOLDERID_Documents },
+  { "DocumentsLibrary", FOLDERID_DocumentsLibrary },
+  { "Downloads", FOLDERID_Downloads },
+  { "Favorites", FOLDERID_Favorites },
+  { "Fonts", FOLDERID_Fonts },
+  { "GameTasks", FOLDERID_GameTasks },
+  { "Games", FOLDERID_Games },
+  { "History", FOLDERID_History },
+  { "HomeGroup", FOLDERID_HomeGroup },
+  { "HomeGroupCurrentUser", FOLDERID_HomeGroupCurrentUser },
+  { "ImplicitAppShortcuts", FOLDERID_ImplicitAppShortcuts },
+  { "InternetCache", FOLDERID_InternetCache },
+  { "InternetFolder", FOLDERID_InternetFolder },
+  { "Libraries", FOLDERID_Libraries },
+  { "Links", FOLDERID_Links },
+  { "LocalAppData", FOLDERID_LocalAppData },
+  { "LocalAppDataLow", FOLDERID_LocalAppDataLow },
+  { "LocalDocuments", FOLDERID_LocalDocuments },
+  { "LocalDownloads", FOLDERID_LocalDownloads },
+  { "LocalMusic", FOLDERID_LocalMusic },
+  { "LocalPictures", FOLDERID_LocalPictures },
+  { "LocalVideos", FOLDERID_LocalVideos },
+  { "LocalizedResourcesDir", FOLDERID_LocalizedResourcesDir },
+  { "Music", FOLDERID_Music },
+  { "MusicLibrary", FOLDERID_MusicLibrary },
+  { "NetHood", FOLDERID_NetHood },
+  { "NetworkFolder", FOLDERID_NetworkFolder },
+  { "Objects3D", FOLDERID_Objects3D },
+  { "OneDrive", FOLDERID_OneDrive },
+  { "OriginalImages", FOLDERID_OriginalImages },
+  { "PhotoAlbums", FOLDERID_PhotoAlbums },
+  { "Pictures", FOLDERID_Pictures },
+  { "PicturesLibrary", FOLDERID_PicturesLibrary },
+  { "Playlists", FOLDERID_Playlists },
+  { "PrintHood", FOLDERID_PrintHood },
+  { "PrintersFolder", FOLDERID_PrintersFolder },
+  { "Profile", FOLDERID_Profile },
+  { "ProgramData", FOLDERID_ProgramData },
+  { "ProgramFiles", FOLDERID_ProgramFiles },
+  { "ProgramFilesCommon", FOLDERID_ProgramFilesCommon },
+  { "ProgramFilesCommonX64", FOLDERID_ProgramFilesCommonX64 },
+  { "ProgramFilesCommonX86", FOLDERID_ProgramFilesCommonX86 },
+  { "ProgramFilesX64", FOLDERID_ProgramFilesX64 },
+  { "ProgramFilesX86", FOLDERID_ProgramFilesX86 },
+  { "Programs", FOLDERID_Programs },
+  { "Public", FOLDERID_Public },
+  { "PublicDesktop", FOLDERID_PublicDesktop },
+  { "PublicDocuments", FOLDERID_PublicDocuments },
+  { "PublicDownloads", FOLDERID_PublicDownloads },
+  { "PublicGameTasks", FOLDERID_PublicGameTasks },
+  { "PublicLibraries", FOLDERID_PublicLibraries },
+  { "PublicMusic", FOLDERID_PublicMusic },
+  { "PublicPictures", FOLDERID_PublicPictures },
+  { "PublicRingtones", FOLDERID_PublicRingtones },
+  { "PublicUserTiles", FOLDERID_PublicUserTiles },
+  { "PublicVideos", FOLDERID_PublicVideos },
+  { "QuickLaunch", FOLDERID_QuickLaunch },
+  { "Recent", FOLDERID_Recent },
+  { "RecordedCalls", FOLDERID_RecordedCalls },
+  { "RecordedTVLibrary", FOLDERID_RecordedTVLibrary },
+  { "RecycleBinFolder", FOLDERID_RecycleBinFolder },
+  { "ResourceDir", FOLDERID_ResourceDir },
+  { "RetailDemo", FOLDERID_RetailDemo },
+  { "Ringtones", FOLDERID_Ringtones },
+  { "RoamedTileImages", FOLDERID_RoamedTileImages },
+  { "RoamingAppData", FOLDERID_RoamingAppData },
+  { "RoamingTiles", FOLDERID_RoamingTiles },
+  { "SEARCH_CSC", FOLDERID_SEARCH_CSC },
+  { "SEARCH_MAPI", FOLDERID_SEARCH_MAPI },
+  { "SampleMusic", FOLDERID_SampleMusic },
+  { "SamplePictures", FOLDERID_SamplePictures },
+  { "SamplePlaylists", FOLDERID_SamplePlaylists },
+  { "SampleVideos", FOLDERID_SampleVideos },
+  { "SavedGames", FOLDERID_SavedGames },
+  { "SavedPictures", FOLDERID_SavedPictures },
+  { "SavedPicturesLibrary", FOLDERID_SavedPicturesLibrary },
+  { "SavedSearches", FOLDERID_SavedSearches },
+  { "Screenshots", FOLDERID_Screenshots },
+  { "SearchHistory", FOLDERID_SearchHistory },
+  { "SearchHome", FOLDERID_SearchHome },
+  { "SearchTemplates", FOLDERID_SearchTemplates },
+  { "SendTo", FOLDERID_SendTo },
+  { "SidebarDefaultParts", FOLDERID_SidebarDefaultParts },
+  { "SidebarParts", FOLDERID_SidebarParts },
+  { "SkyDrive", FOLDERID_SkyDrive },
+  { "SkyDriveCameraRoll", FOLDERID_SkyDriveCameraRoll },
+  { "SkyDriveDocuments", FOLDERID_SkyDriveDocuments },
+  { "SkyDriveMusic", FOLDERID_SkyDriveMusic },
+  { "SkyDrivePictures", FOLDERID_SkyDrivePictures },
+  { "StartMenu", FOLDERID_StartMenu },
+  { "StartMenuAllPrograms", FOLDERID_StartMenuAllPrograms },
+  { "Startup", FOLDERID_Startup },
+  { "SyncManagerFolder", FOLDERID_SyncManagerFolder },
+  { "SyncResultsFolder", FOLDERID_SyncResultsFolder },
+  { "SyncSetupFolder", FOLDERID_SyncSetupFolder },
+  { "System", FOLDERID_System },
+  { "SystemX86", FOLDERID_SystemX86 },
+  { "Templates", FOLDERID_Templates },
+  { "UserPinned", FOLDERID_UserPinned },
+  { "UserProfiles", FOLDERID_UserProfiles },
+  { "UserProgramFiles", FOLDERID_UserProgramFiles },
+  { "UserProgramFilesCommon", FOLDERID_UserProgramFilesCommon },
+  { "UsersFiles", FOLDERID_UsersFiles },
+  { "UsersLibraries", FOLDERID_UsersLibraries },
+  { "Videos", FOLDERID_Videos },
+  { "VideosLibrary", FOLDERID_VideosLibrary },
+  { "Windows", FOLDERID_Windows },
+};
+
+
+NAN_METHOD(SHGetKnownFolderPath) {
+  Isolate* isolate = Isolate::GetCurrent();
+
+  if ((info.Length() < 1) || (info.Length() > 2)) {
+    Nan::ThrowError("Expected 1-2 parameters (folderId, flag)");
+    return;
+  }
+
+  KNOWNFOLDERID folder;
+  DWORD flag = KF_FLAG_DEFAULT;
+
+  {
+    String::Utf8Value folderIdV8(info[0]->ToString());
+    auto folderId = knownFolders.find(*folderIdV8);
+
+    if (folderId == knownFolders.end()) {
+      Nan::ThrowError("Invalid folder id");
+      return;
+    }
+    folder = folderId->second;
+  }
+
+  if (info.Length() > 1) {
+    if (!info[1]->IsArray()) {
+      Nan::ThrowError("Invalid flags, expected to be an array");
+      return;
+    }
+    Local<Array> flagList = Local<Array>::Cast(info[1]);
+
+    for (uint32_t i = 0; i < flagList->Length(); ++i) {
+      v8::String::Utf8Value flagV8(flagList->Get(i)->ToString());
+
+      auto flagIter = knownFolderFlags.find(*flagV8);
+      if (flagIter == knownFolderFlags.end()) {
+        Nan::ThrowError("Invalid folder flag");
+        return;
+      }
+
+      if (flagIter != knownFolderFlags.end()) {
+        flag |= flagIter->second;
+      }
+    }
+  }
+
+  PWSTR result;
+
+  HRESULT res = SHGetKnownFolderPath(folder, flag, nullptr, &result);
+
+  if (FAILED(res)) {
+    isolate->ThrowException(WinApiException(res, "SHGetKnownFolderPath"));
+    return;
+  }
+
+  info.GetReturnValue().Set(New<String>(toMB(result, CodePage::UTF8, wcslen(result))).ToLocalChecked());
+
+  CoTaskMemFree(result);
+}
+
 NAN_MODULE_INIT(Init) {
   Nan::Set(target, "SetFileAttributes"_n,
     GetFunction(New<FunctionTemplate>(SetFileAttributes)).ToLocalChecked());
@@ -717,6 +948,9 @@ NAN_MODULE_INIT(Init) {
     GetFunction(New<FunctionTemplate>(RegEnumKeys)).ToLocalChecked());
   Nan::Set(target, "RegEnumValues"_n,
     GetFunction(New<FunctionTemplate>(RegEnumValues)).ToLocalChecked());
+
+  Nan::Set(target, "SHGetKnownFolderPath"_n,
+    GetFunction(New<FunctionTemplate>(SHGetKnownFolderPath)).ToLocalChecked());
 }
 
 NODE_MODULE(winapi, Init)

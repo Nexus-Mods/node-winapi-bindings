@@ -51,3 +51,32 @@ export function RegGetValue(hkey: Buffer | REGISTRY_HIVE, path: string, key: str
 export function RegEnumKeys(hkey: Buffer): Array<{ class: string, key: string, lastWritten: number }>;
 // get a list of value names within an hkey
 export function RegEnumValues(hkey: Buffer): Array<{ type: REGISTRY_TYPE, key: string }>;
+
+export type KNOWNFOLDER =
+  'AccountPictures' | 'AddNewPrograms' | 'AdminTools' | 'AllAppMods' | 'AppCaptures' | 'AppDataDesktop' | 'AppDataDocuments' |
+  'AppDataFavorites' | 'AppDataProgramData' | 'AppUpdates' | 'ApplicationShortcuts' | 'AppsFolder' | 'CDBurning' | 'CameraRoll' |
+  'CameraRollLibrary' | 'ChangeRemovePrograms' | 'CommonAdminTools' | 'CommonOEMLinks' | 'CommonPrograms' | 'CommonStartMenu' |
+  'CommonStartMenuPlaces' | 'CommonStartup' | 'CommonTemplates' | 'ComputerFolder' | 'ConflictFolder' | 'ConnectionsFolder' | 'Contacts' |
+  'ControlPanelFolder' | 'Cookies' | 'CurrentAppMods' | 'Desktop' | 'DevelopmentFiles' | 'Device' | 'DeviceMetadataStore' | 'Documents' |
+  'DocumentsLibrary' | 'Downloads' | 'Favorites' | 'Fonts' | 'GameTasks' | 'Games' | 'History' | 'HomeGroup' | 'HomeGroupCurrentUser' | 
+  'ImplicitAppShortcuts' | 'InternetCache' | 'InternetFolder' | 'Libraries' | 'Links' | 'LocalAppData' | 'LocalAppDataLow' | 
+  'LocalDocuments' | 'LocalDownloads' | 'LocalMusic' | 'LocalPictures' | 'LocalVideos' | 'LocalizedResourcesDir' | 'Music' | 'MusicLibrary' | 
+  'NetHood' | 'NetworkFolder' | 'Objects3D' | 'OneDrive' | 'OriginalImages' | 'PhotoAlbums' | 'Pictures' | 'PicturesLibrary' | 'Playlists' | 
+  'PrintHood' | 'PrintersFolder' | 'Profile' | 'ProgramData' | 'ProgramFiles' | 'ProgramFilesCommon' | 'ProgramFilesCommonX64' | 'ProgramFilesCommonX86' | 
+  'ProgramFilesX64' | 'ProgramFilesX86' | 'Programs' | 'Public' | 'PublicDesktop' | 'PublicDocuments' | 'PublicDownloads' | 'PublicGameTasks' | 
+  'PublicLibraries' | 'PublicMusic' | 'PublicPictures' | 'PublicRingtones' | 'PublicUserTiles' | 'PublicVideos' | 'QuickLaunch' | 'Recent' | 
+  'RecordedCalls' | 'RecordedTVLibrary' | 'RecycleBinFolder' | 'ResourceDir' | 'RetailDemo' | 'Ringtones' | 'RoamedTileImages' | 'RoamingAppData' | 'RoamingTiles' | 
+  'SEARCH_CSC' | 'SEARCH_MAPI' | 'SampleMusic' | 'SamplePictures' | 'SamplePlaylists' | 'SampleVideos' | 'SavedGames' | 'SavedPictures' | 'SavedPicturesLibrary' | 
+  'SavedSearches' | 'Screenshots' | 'SearchHistory' | 'SearchHome' | 'SearchTemplates' | 'SendTo' | 'SidebarDefaultParts' | 'SidebarParts' | 'SkyDrive' | 
+  'SkyDriveCameraRoll' | 'SkyDriveDocuments' | 'SkyDriveMusic' | 'SkyDrivePictures' | 'StartMenu' | 'StartMenuAllPrograms' | 'Startup' | 'SyncManagerFolder' | 
+  'SyncResultsFolder' | 'SyncSetupFolder' | 'System' | 'SystemX86' | 'Templates' | 'UserPinned' | 'UserProfiles' | 'UserProgramFiles' | 'UserProgramFilesCommon' | 
+  'UsersFiles' | 'UsersLibraries' | 'Videos' | 'VideosLibrary' | 'Windows';
+
+export type KNOWNFOLDER_FLAG =
+  "force_app_data_redirection" | "return_filter_redirection_target" | "force_package_redirection" | "no_package_redirection" |
+  "force_appcontainer_redirection" | "no_appcontainer_redirection" | "create" | "dont_verify" | "dont_unexpand" | "no_alias" | "init" |
+  "default_path" | "not_parent_relative" | "simple_idlist" | "alias_only";
+
+// get a known folder path
+export function SHGetKnownFolderPath(folder: KNOWNFOLDER, flag?: KNOWNFOLDER_FLAG[]): string;
+
