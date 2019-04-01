@@ -862,7 +862,6 @@ static const std::unordered_map<std::string, REFKNOWNFOLDERID> knownFolders {
   { "Windows", FOLDERID_Windows },
 };
 
-
 NAN_METHOD(SHGetKnownFolderPath) {
   Isolate* isolate = Isolate::GetCurrent();
 
@@ -921,6 +920,15 @@ NAN_METHOD(SHGetKnownFolderPath) {
   CoTaskMemFree(result);
 }
 
+NAN_METHOD(IsThisWine) {
+  Isolate* isolate = Isolate::GetCurrent();
+
+  HMODULE ntdll = LoadLibrary(TEXT("ntdll.dll"));
+  FARPROC addr = GetProcAddress(ntdll, "wine_get_version");
+
+  info.GetReturnValue().Set(addr != nullptr);
+}
+
 NAN_MODULE_INIT(Init) {
   Nan::Set(target, "SetFileAttributes"_n,
     GetFunction(New<FunctionTemplate>(SetFileAttributes)).ToLocalChecked());
@@ -951,6 +959,9 @@ NAN_MODULE_INIT(Init) {
 
   Nan::Set(target, "SHGetKnownFolderPath"_n,
     GetFunction(New<FunctionTemplate>(SHGetKnownFolderPath)).ToLocalChecked());
+
+  Nan::Set(target, "IsThisWine"_n,
+    GetFunction(New<FunctionTemplate>(IsThisWine)).ToLocalChecked());
 }
 
 NODE_MODULE(winapi, Init)

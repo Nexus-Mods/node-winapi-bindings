@@ -7,6 +7,7 @@ This module is windows-only, when writing cross-platform applications, wrap the 
 
 # Implemented Functions
 
+Filesystem
 - SetFileAttributes
 - GetDiskFreeSpaceEx
 - GetVolumePathName
@@ -16,10 +17,17 @@ This module is windows-only, when writing cross-platform applications, wrap the 
 - GetPrivateProfileString
 - WritePrivateProfileString
 
+Registry
 - WithRegOpen (wrapper for RegOpenKeyEx and RegCloseKey)
 - RegGetValue
 - RegEnumKeys (wrapper for RegEnumKeyEx retrieving all keys in one call)
 - RegEnumValues (wrapper for RegEnumValue retrieving all value names in one call, not the values themselves though)
+
+Shell
+- SHGetKnownFolderPath
+
+Auxiliary
+- IsThisWine
 
 # Supported OS
 
