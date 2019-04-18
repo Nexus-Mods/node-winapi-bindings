@@ -43,7 +43,7 @@ inline v8::Local<v8::Value> WinApiException(
   , const char* path = nullptr) {
 
   std::wstring errStr = strerror(lastError);
-  std::string err = toMB(errStr.c_str(), CodePage::UTF8, errStr.size());
+  std::string err = toMB(errStr.c_str(), CodePage::UTF8, errStr.size()) + " (" + std::to_string(lastError) + ")";
   return node::WinapiErrnoException(v8::Isolate::GetCurrent(), lastError, func, err.c_str(), path);
 }
 
