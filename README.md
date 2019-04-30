@@ -26,6 +26,10 @@ Registry
 Shell
 - SHGetKnownFolderPath
 
+Other
+- GetProcessList (wrapper for Process32First/Process32Next)
+- GetModuleList (wrapper for Module32First/Module32Next)
+
 Auxiliary
 - IsThisWine
 

@@ -1,5 +1,6 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+#include <tlhelp32.h>
 #include <shellapi.h>
 #include <Shlobj.h>
 #include <string>
@@ -57,6 +58,10 @@ std::wstring toWC(const Local<Value> &input) {
   }
   String::Utf8Value temp(input);
   return toWC(*temp, CodePage::UTF8, temp.length());
+}
+
+Local<Value> toV8(const wchar_t *input) {
+  return New<String>(toMB(input, CodePage::UTF8, (std::numeric_limits<size_t>::max)())).ToLocalChecked();
 }
 
 
@@ -920,6 +925,68 @@ NAN_METHOD(SHGetKnownFolderPath) {
   CoTaskMemFree(result);
 }
 
+NAN_METHOD(GetModuleList) {
+  auto convertME = [](const MODULEENTRY32W &mod) -> Local<Object> {
+    Local<Object> item = New<Object>();
+    item->Set("baseAddr"_n, New<Number>(reinterpret_cast<uint64_t>(mod.modBaseAddr)));
+    item->Set("baseSize"_n, New<Number>(mod.modBaseSize));
+    item->Set("module"_n, toV8(mod.szModule));
+    item->Set("exePath"_n, toV8(mod.szExePath));
+    return item;
+  };
+
+  Isolate* isolate = Isolate::GetCurrent();
+
+  if (info.Length() != 1) {
+    Nan::ThrowError("Expected 1 parameter (process id)");
+    return;
+  }
+
+  Local<Array> modules = New<Array>();
+
+  HANDLE snap = ::CreateToolhelp32Snapshot(TH32CS_SNAPMODULE, info[0]->Uint32Value());
+  MODULEENTRY32W me32;
+  me32.dwSize = sizeof(MODULEENTRY32W);
+  int idx = 0;
+  bool more = ::Module32FirstW(snap, &me32);
+  while (more) {
+    modules->Set(idx++, convertME(me32));
+    more = ::Module32NextW(snap, &me32);
+  }
+
+  info.GetReturnValue().Set(modules);
+}
+
+NAN_METHOD(GetProcessList) {
+  
+  auto convertPE = [](const PROCESSENTRY32W &process) -> Local<Object> {
+    Local<Object> item = New<Object>();
+    item->Set("numThreads"_n, New<Number>(process.cntThreads));
+    item->Set("processID"_n, New<Number>(process.th32ProcessID));
+    item->Set("parentProcessID"_n, New<Number>(process.th32ParentProcessID));
+    item->Set("priClassBase"_n, New<Number>(process.pcPriClassBase));
+    item->Set("exeFile"_n, toV8(process.szExeFile));
+    return item;
+  };
+
+  Local<Array> result = New<Array>();
+  int idx = 0;
+  HANDLE snap = ::CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+  PROCESSENTRY32W pe32;
+
+  if (snap != INVALID_HANDLE_VALUE) {
+    pe32.dwSize = sizeof(PROCESSENTRY32W);
+    bool more = ::Process32FirstW(snap, &pe32);
+    while (more) {
+      result->Set(idx++, convertPE(pe32));
+      more = ::Process32NextW(snap, &pe32);
+    }
+    ::CloseHandle(snap);
+  }
+
+  info.GetReturnValue().Set(result);
+}
+
 NAN_METHOD(IsThisWine) {
   Isolate* isolate = Isolate::GetCurrent();
 
@@ -938,13 +1005,13 @@ NAN_MODULE_INIT(Init) {
     GetFunction(New<FunctionTemplate>(GetVolumePathName)).ToLocalChecked());
   Nan::Set(target, "ShellExecuteEx"_n,
     GetFunction(New<FunctionTemplate>(ShellExecuteEx)).ToLocalChecked());
+
   Nan::Set(target, "GetPrivateProfileSection"_n,
     GetFunction(New<FunctionTemplate>(GetPrivateProfileSection)).ToLocalChecked());
   Nan::Set(target, "GetPrivateProfileSectionNames"_n,
     GetFunction(New<FunctionTemplate>(GetPrivateProfileSectionNames)).ToLocalChecked());
   Nan::Set(target, "GetPrivateProfileString"_n,
     GetFunction(New<FunctionTemplate>(GetPrivateProfileString)).ToLocalChecked());
-
   Nan::Set(target, "WritePrivateProfileString"_n,
     GetFunction(New<FunctionTemplate>(WritePrivateProfileString)).ToLocalChecked());
 
@@ -959,6 +1026,11 @@ NAN_MODULE_INIT(Init) {
 
   Nan::Set(target, "SHGetKnownFolderPath"_n,
     GetFunction(New<FunctionTemplate>(SHGetKnownFolderPath)).ToLocalChecked());
+
+  Nan::Set(target, "GetProcessList"_n,
+    GetFunction(New<FunctionTemplate>(GetProcessList)).ToLocalChecked());
+  Nan::Set(target, "GetModuleList"_n,
+    GetFunction(New<FunctionTemplate>(GetModuleList)).ToLocalChecked());
 
   Nan::Set(target, "IsThisWine"_n,
     GetFunction(New<FunctionTemplate>(IsThisWine)).ToLocalChecked());

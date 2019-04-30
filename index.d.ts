@@ -31,6 +31,35 @@ export interface ShellExecuteOptions {
   mask?: Array<ShellExecuteMask | number>;
 }
 
+export interface ProcessEntry {
+  // number of threads in this process
+  numThreads: number;
+  // pid
+  processId: number;
+  // pid of the parent process
+  parentProcessId: number;
+  // default priority of threads spawned in this process
+  priClassBase: number;
+  // name of the executable
+  exeFile: string;
+}
+
+export interface ModuleEntry {
+  // memory address the module is loaded at
+  baseAddr: number;
+  // size of the module in bytes
+  baseSize: number;
+  // file name of the module
+  module: string;
+  // path of the module
+  exePath: string;
+}
+
+// get list of processes currently running
+export function GetProcessList(): ProcessEntry[];
+// get list of modules loaded in the specified process
+export function GetModuleList(pid: number): ModuleEntry[];
+
 // execute external application
 export function ShellExecuteEx(options: ShellExecuteOptions): void;
 
