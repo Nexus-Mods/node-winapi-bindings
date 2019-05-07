@@ -35,9 +35,9 @@ export interface ProcessEntry {
   // number of threads in this process
   numThreads: number;
   // pid
-  processId: number;
+  processID: number;
   // pid of the parent process
-  parentProcessId: number;
+  parentProcessID: number;
   // default priority of threads spawned in this process
   priClassBase: number;
   // name of the executable
