@@ -109,3 +109,12 @@ export type KNOWNFOLDER_FLAG =
 // get a known folder path
 export function SHGetKnownFolderPath(folder: KNOWNFOLDER, flag?: KNOWNFOLDER_FLAG[]): string;
 
+// get list of system-preferred UI languages
+export function GetSystemPreferredUILanguages(): string[];
+// get list of user-preferred UI languages (take precedence over system-preference)
+export function GetUserPreferredUILanguages(): string[];
+// get list of process-preferred UI languages (take precedence over user- and system-preference)
+export function GetProcessPreferredUILanguages(): string[];
+// set list of process-preferred UI languages (windows seem to pick the first language actually installed, so
+// setting a language that the user doesn't have installed has no effect, no error gets reported)
+export function SetProcessPreferredUILanguages(languages: string[]): void;

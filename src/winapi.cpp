@@ -987,6 +987,81 @@ NAN_METHOD(GetProcessList) {
   info.GetReturnValue().Set(result);
 }
 
+NAN_METHOD(SetProcessPreferredUILanguages) {
+  Isolate* isolate = Isolate::GetCurrent();
+
+  if (info.Length() != 1) {
+    Nan::ThrowError("Expected 1 parameter (the list of language codes, in the format \"en-US\")");
+    return;
+  }
+
+  Local<Array> languages = Local<Array>::Cast(info[0]);
+
+  std::vector<wchar_t> buffer;
+  size_t offset = 0;
+
+  ULONG count = languages->Length();
+
+  for (int i = 0; i < count; ++i) {
+    v8::String::Utf8Value langV8(languages->Get(i)->ToString());
+    const std::wstring langU16 = toWC(*langV8, CodePage::UTF8, langV8.length());
+    buffer.resize(offset + langU16.length() + 2);
+    wcsncpy(&buffer[offset], langU16.c_str(), langU16.length() + 1);
+    offset += langU16.length() + 1;
+  }
+
+  buffer[offset] = '\0';
+
+  if (!SetProcessPreferredUILanguages(MUI_LANGUAGE_NAME, &buffer[0], &count)) {
+    isolate->ThrowException(WinApiException(::GetLastError(), "SetProcessPreferredUILanguages"));
+  }
+}
+
+void GetPreferredLanguage(const Nan::FunctionCallbackInfo<v8::Value> &info,
+                          BOOL (*func)(DWORD, PULONG, PZZWSTR, PULONG),
+                          const char *funcName) {
+  Isolate* isolate = Isolate::GetCurrent();
+
+  ULONG numLanguages = 0;
+  std::vector<wchar_t> buffer;
+  ULONG bufferSize = 0;
+  if (!func(MUI_LANGUAGE_NAME, &numLanguages, nullptr, &bufferSize)) {
+    isolate->ThrowException(WinApiException(::GetLastError(), funcName));
+    return;
+  }
+
+  buffer.resize(bufferSize);
+
+  if (!func(MUI_LANGUAGE_NAME, &numLanguages, &buffer[0], &bufferSize)) {
+    isolate->ThrowException(WinApiException(::GetLastError(), funcName));
+    return;
+  }
+
+  Local<Array> result = New<Array>();
+
+  wchar_t *buf = &buffer[0];
+
+  for (int i = 0; i < numLanguages; ++i) {
+    size_t len = wcslen(buf);
+    result->Set(i, New(toMB(buf, CodePage::UTF8, len).c_str()).ToLocalChecked());
+    buf += len + 1;
+  }
+
+  info.GetReturnValue().Set(result);
+}
+
+NAN_METHOD(GetUserPreferredUILanguages) {
+  GetPreferredLanguage(info, &GetUserPreferredUILanguages, "GetUserPreferredUILanguages");
+}
+
+NAN_METHOD(GetSystemPreferredUILanguages) {
+  GetPreferredLanguage(info, &GetSystemPreferredUILanguages, "GetSystemPreferredUILanguages");
+}
+
+NAN_METHOD(GetProcessPreferredUILanguages) {
+  GetPreferredLanguage(info, &GetProcessPreferredUILanguages, "GetProcessPreferredUILanguages");
+}
+
 NAN_METHOD(IsThisWine) {
   Isolate* isolate = Isolate::GetCurrent();
 
@@ -1031,6 +1106,15 @@ NAN_MODULE_INIT(Init) {
     GetFunction(New<FunctionTemplate>(GetProcessList)).ToLocalChecked());
   Nan::Set(target, "GetModuleList"_n,
     GetFunction(New<FunctionTemplate>(GetModuleList)).ToLocalChecked());
+
+  Nan::Set(target, "GetUserPreferredUILanguages"_n,
+    GetFunction(New<FunctionTemplate>(GetUserPreferredUILanguages)).ToLocalChecked());
+  Nan::Set(target, "GetSystemPreferredUILanguages"_n,
+    GetFunction(New<FunctionTemplate>(GetSystemPreferredUILanguages)).ToLocalChecked());
+  Nan::Set(target, "GetProcessPreferredUILanguages"_n,
+    GetFunction(New<FunctionTemplate>(GetProcessPreferredUILanguages)).ToLocalChecked());
+  Nan::Set(target, "SetProcessPreferredUILanguages"_n,
+    GetFunction(New<FunctionTemplate>(SetProcessPreferredUILanguages)).ToLocalChecked());
 
   Nan::Set(target, "IsThisWine"_n,
     GetFunction(New<FunctionTemplate>(IsThisWine)).ToLocalChecked());

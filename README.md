@@ -26,6 +26,12 @@ Registry
 Shell
 - SHGetKnownFolderPath
 
+Language
+- GetSystemPreferredUILanguages
+- GetUserPreferredUILanguages
+- GetProcessPreferredUILanguages
+- SetProcessPreferredUILanguages
+
 Other
 - GetProcessList (wrapper for Process32First/Process32Next)
 - GetModuleList (wrapper for Module32First/Module32Next)
