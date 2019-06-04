@@ -38,6 +38,23 @@ static std::wstring strerror(DWORD errorno) {
   }
 }
 
+Local<String> operator "" _n(const char *input, size_t) {
+  return Nan::New(input).ToLocalChecked();
+}
+
+const char *translateCode(DWORD err) {
+  switch (err) {
+  case ERROR_USER_MAPPED_FILE: return "EBUSY";
+  default: return uv_err_name(uv_translate_sys_error(err));
+  }
+}
+
+void setNodeErrorCode(v8::Local<v8::Object> err, DWORD errCode) {
+  if (!err->Has("code"_n)) {
+    err->Set("code"_n, Nan::New(translateCode(errCode)).ToLocalChecked());
+  }
+}
+
 inline v8::Local<v8::Value> WinApiException(
   DWORD lastError
   , const char *func = nullptr
@@ -45,11 +62,9 @@ inline v8::Local<v8::Value> WinApiException(
 
   std::wstring errStr = strerror(lastError);
   std::string err = toMB(errStr.c_str(), CodePage::UTF8, errStr.size()) + " (" + std::to_string(lastError) + ")";
-  return node::WinapiErrnoException(v8::Isolate::GetCurrent(), lastError, func, err.c_str(), path);
-}
-
-Local<String> operator "" _n(const char *input, size_t) {
-  return Nan::New(input).ToLocalChecked();
+  v8::Local<v8::Value> res = node::WinapiErrnoException(v8::Isolate::GetCurrent(), lastError, func, err.c_str(), path);
+  setNodeErrorCode(res->ToObject(), lastError);
+  return res;
 }
 
 std::wstring toWC(const Local<Value> &input) {
