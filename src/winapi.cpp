@@ -50,8 +50,9 @@ const char *translateCode(DWORD err) {
 }
 
 void setNodeErrorCode(v8::Local<v8::Object> err, DWORD errCode) {
-  if (!err->Has("code"_n)) {
-    err->Set("code"_n, Nan::New(translateCode(errCode)).ToLocalChecked());
+  Local<Context> context = Nan::GetCurrentContext();
+  if (!err->Has(context, "code"_n).ToChecked()) {
+    err->Set(context, "code"_n, Nan::New(translateCode(errCode)).ToLocalChecked());
   }
 }
 
@@ -60,18 +61,22 @@ inline v8::Local<v8::Value> WinApiException(
   , const char *func = nullptr
   , const char* path = nullptr) {
 
+  Local<Context> context = Nan::GetCurrentContext();
+
   std::wstring errStr = strerror(lastError);
   std::string err = toMB(errStr.c_str(), CodePage::UTF8, errStr.size()) + " (" + std::to_string(lastError) + ")";
   v8::Local<v8::Value> res = node::WinapiErrnoException(v8::Isolate::GetCurrent(), lastError, func, err.c_str(), path);
-  setNodeErrorCode(res->ToObject(), lastError);
+  setNodeErrorCode(res->ToObject(context).ToLocalChecked(), lastError);
   return res;
 }
 
 std::wstring toWC(const Local<Value> &input) {
+  Isolate *isolate = Isolate::GetCurrent();
+
   if (input->IsNullOrUndefined()) {
     return std::wstring();
   }
-  String::Utf8Value temp(input);
+  String::Utf8Value temp(isolate, input);
   return toWC(*temp, CodePage::UTF8, temp.length());
 }
 
@@ -80,7 +85,7 @@ Local<Value> toV8(const wchar_t *input) {
 }
 
 
-DWORD mapAttributes(Local<Array> input) {
+DWORD mapAttributes(Isolate *isolate, Local<Array> input) {
   static const std::unordered_map<std::string, DWORD> attributeMap{
     { "archive", FILE_ATTRIBUTE_ARCHIVE },
     { "hidden", FILE_ATTRIBUTE_HIDDEN },
@@ -90,9 +95,11 @@ DWORD mapAttributes(Local<Array> input) {
     { "temporary", FILE_ATTRIBUTE_TEMPORARY },
   };
 
+  Local<Context> context = Nan::GetCurrentContext();
+
   DWORD res = 0;
   for (uint32_t i = 0; i < input->Length(); ++i) {
-    v8::String::Utf8Value attr(input->Get(i)->ToString());
+    v8::String::Utf8Value attr(isolate, input->Get(context, i).ToLocalChecked());
 
     auto attribute = attributeMap.find(*attr);
     if (attribute != attributeMap.end()) {
@@ -111,11 +118,11 @@ NAN_METHOD(SetFileAttributes) {
       return;
     }
 
-    String::Utf8Value pathV8(info[0]->ToString());
+    String::Utf8Value pathV8(isolate, info[0]);
     std::wstring path = toWC(*pathV8, CodePage::UTF8, pathV8.length());
     Local<Array> attributes = Local<Array>::Cast(info[1]);
 
-    if (!::SetFileAttributesW(path.c_str(), mapAttributes(attributes))) {
+    if (!::SetFileAttributesW(path.c_str(), mapAttributes(isolate, attributes))) {
       isolate->ThrowException(WinApiException(::GetLastError(), "SetFileAttributes", *pathV8));
       return;
     }
@@ -127,6 +134,7 @@ NAN_METHOD(SetFileAttributes) {
 
 NAN_METHOD(GetDiskFreeSpaceEx) {
   Isolate* isolate = Isolate::GetCurrent();
+  Local<Context> context = Nan::GetCurrentContext();
 
   try {
     if (info.Length() != 1) {
@@ -134,7 +142,7 @@ NAN_METHOD(GetDiskFreeSpaceEx) {
       return;
     }
 
-    String::Utf8Value pathV8(info[0]->ToString());
+    String::Utf8Value pathV8(isolate, info[0]);
     std::wstring path = toWC(*pathV8, CodePage::UTF8, pathV8.length());
 
     ULARGE_INTEGER freeBytesAvailableToCaller;
@@ -150,9 +158,9 @@ NAN_METHOD(GetDiskFreeSpaceEx) {
     }
 
     Local<Object> result = New<Object>();
-    result->Set("total"_n, New<Number>(static_cast<double>(totalNumberOfBytes.QuadPart)));
-    result->Set("free"_n, New<Number>(static_cast<double>(totalNumberOfFreeBytes.QuadPart)));
-    result->Set("freeToCaller"_n, New<Number>(static_cast<double>(freeBytesAvailableToCaller.QuadPart)));
+    result->Set(context, "total"_n, New<Number>(static_cast<double>(totalNumberOfBytes.QuadPart)));
+    result->Set(context, "free"_n, New<Number>(static_cast<double>(totalNumberOfFreeBytes.QuadPart)));
+    result->Set(context, "freeToCaller"_n, New<Number>(static_cast<double>(freeBytesAvailableToCaller.QuadPart)));
 
     info.GetReturnValue().Set(result);
   }
@@ -219,6 +227,7 @@ NAN_METHOD(ShellExecuteEx) {
   };
 
   Isolate *isolate = Isolate::GetCurrent();
+  Local<Context> context = Nan::GetCurrentContext();
 
   try {
     if (info.Length() != 1) {
@@ -226,9 +235,12 @@ NAN_METHOD(ShellExecuteEx) {
       return;
     }
 
-    Local<Object> args(info[0]->ToObject());
+    Local<Object> args(info[0]->ToObject(context).ToLocalChecked());
+    auto hasArg = [&args, &context](const Local<String> &key) {
+      return args->Has(context, key).ToChecked();
+    };
 
-    if (!args->Has("file"_n) || !args->Has("show"_n)) {
+    if (!hasArg("file"_n) || !hasArg("show"_n)) {
       Nan::ThrowError("Parameter missing (required: file, show)");
       return;
     }
@@ -236,9 +248,9 @@ NAN_METHOD(ShellExecuteEx) {
     // important: has to be a container that doesn't invalidate iterators on insertion (like vector would)
     std::list<std::wstring> buffers;
 
-    auto assignParameter = [&args, &buffers](LPCWSTR &target, const Local<Value> &key) {
-      if (args->Has(key)) {
-        String::Utf8Value value(args->Get(key)->ToString());
+    auto assignParameter = [isolate, &context, &args, &hasArg, &buffers](LPCWSTR &target, const Local<String> &key) {
+      if (hasArg(key)) {
+        String::Utf8Value value(isolate, args->Get(context, key).ToLocalChecked());
         buffers.push_back(toWC(*value, CodePage::UTF8, value.length()));
         target = buffers.rbegin()->c_str();
       }
@@ -253,15 +265,15 @@ NAN_METHOD(ShellExecuteEx) {
 
     execInfo.fMask = 0;
 
-    if ((args->Has("mask"_n) && args->Get("mask"_n)->IsArray())) {
-      Local<Array> mask = Local<Array>::Cast(args->Get("mask"_n));
+    if ((hasArg("mask"_n) && args->Get(context, "mask"_n).ToLocalChecked()->IsArray())) {
+      Local<Array> mask = Local<Array>::Cast(args->Get(context, "mask"_n).ToLocalChecked());
       for (uint32_t i = 0; i < mask->Length(); ++i) {
-        Local<Value> val = mask->Get(i);
+        Local<Value> val = mask->Get(context, i).ToLocalChecked();
         if (val->IsString()) {
-          execInfo.fMask |= translateExecuteMask(*Utf8String(val->ToString()));
+          execInfo.fMask |= translateExecuteMask(*Utf8String(val->ToString(context).ToLocalChecked()));
         }
         else {
-          execInfo.fMask |= val->Uint32Value();
+          execInfo.fMask |= val->Uint32Value(context).ToChecked();
         }
       }
     }
@@ -274,7 +286,7 @@ NAN_METHOD(ShellExecuteEx) {
     assignParameter(execInfo.lpDirectory, "directory"_n);
     assignParameter(execInfo.lpParameters, "parameters"_n);
 
-    v8::String::Utf8Value show(args->Get("show"_n)->ToString());
+    v8::String::Utf8Value show(isolate, args->Get(context, "show"_n).ToLocalChecked());
     auto iter = showFlagMap.find(*show);
     if (iter == showFlagMap.end()) {
       Nan::ThrowRangeError("Invalid show flag");
@@ -296,6 +308,7 @@ NAN_METHOD(ShellExecuteEx) {
 
 NAN_METHOD(GetPrivateProfileSection) {
   Isolate* isolate = Isolate::GetCurrent();
+  Local<Context> context = Nan::GetCurrentContext();
 
   try {
     if (info.Length() != 2) {
@@ -303,8 +316,8 @@ NAN_METHOD(GetPrivateProfileSection) {
       return;
     }
 
-    String::Utf8Value appNameV8(info[0]->ToString());
-    String::Utf8Value fileNameV8(info[1]->ToString());
+    String::Utf8Value appNameV8(isolate, info[0]);
+    String::Utf8Value fileNameV8(isolate, info[1]);
 
     std::wstring appName = toWC(*appNameV8, CodePage::UTF8, appNameV8.length());
     std::wstring fileName = toWC(*fileNameV8, CodePage::UTF8, fileNameV8.length());
@@ -329,7 +342,7 @@ NAN_METHOD(GetPrivateProfileSection) {
         valLength = wcslen(eqPos);
         lastValue = New<String>(toMB(eqPos + 1, CodePage::UTF8, valLength - 1)).ToLocalChecked();
         ptr = eqPos + valLength + 1;
-        result->Set(lastKey, lastValue);
+        result->Set(context, lastKey, lastValue);
       }
       else {
         // ignore all lines that contain no equal sign
@@ -345,6 +358,7 @@ NAN_METHOD(GetPrivateProfileSection) {
 }
 
 Local<Array> convertMultiSZ(wchar_t *input, DWORD maxLength) {
+  Local<Context> context = Nan::GetCurrentContext();
   Local<Array> result = New<Array>();
   wchar_t *start = input;
   wchar_t *ptr = start;
@@ -353,7 +367,7 @@ Local<Array> convertMultiSZ(wchar_t *input, DWORD maxLength) {
   // the buffer, also verify we don't exceed the character count
   while ((*ptr != '\0') && ((ptr - start) < maxLength)) {
     size_t len = wcslen(ptr);
-    result->Set(idx++, New<String>(toMB(ptr, CodePage::UTF8, len)).ToLocalChecked());
+    result->Set(context, idx++, New<String>(toMB(ptr, CodePage::UTF8, len)).ToLocalChecked());
     ptr += len + 1;
   }
 
@@ -369,7 +383,7 @@ NAN_METHOD(GetPrivateProfileSectionNames) {
       return;
     }
 
-    String::Utf8Value fileName(info[0]->ToString());
+    String::Utf8Value fileName(isolate, info[0]);
 
     DWORD size = 32 * 1024;
     std::unique_ptr<wchar_t[]> buffer(new wchar_t[size]);
@@ -440,10 +454,10 @@ NAN_METHOD(WritePrivateProfileString) {
       return;
     }
 
-    String::Utf8Value appNameV8(info[0]->ToString());
-    String::Utf8Value keyNameV8(info[1]->ToString());
-    String::Utf8Value valueV8(info[2]->ToString());
-    String::Utf8Value fileNameV8(info[3]->ToString());
+    String::Utf8Value appNameV8(isolate, info[0]);
+    String::Utf8Value keyNameV8(isolate, info[1]);
+    String::Utf8Value valueV8(isolate, info[2]);
+    String::Utf8Value fileNameV8(isolate, info[3]);
 
     std::wstring appName = toWC(*appNameV8, CodePage::UTF8, appNameV8.length());
     std::wstring keyName = toWC(*keyNameV8, CodePage::UTF8, keyNameV8.length());
@@ -480,8 +494,8 @@ NAN_METHOD(WithRegOpen) {
       return;
     }
 
-    String::Utf8Value hiveV8(info[0]->ToString());
-    String::Utf8Value pathV8(info[1]->ToString());
+    String::Utf8Value hiveV8(isolate, info[0]);
+    String::Utf8Value pathV8(isolate, info[1]);
     v8::Local<v8::Function> cb = info[2].As<v8::Function>();
 
     auto iter = hkeyMap.find(*hiveV8);
@@ -539,6 +553,7 @@ uint64_t toTimestamp(FILETIME ft)
 
 NAN_METHOD(RegGetValue) {
   Isolate* isolate = Isolate::GetCurrent();
+  Local<Context> context = Nan::GetCurrentContext();
 
   try {
     if (info.Length() != 3) {
@@ -548,7 +563,7 @@ NAN_METHOD(RegGetValue) {
 
     HKEY key;
     if (info[0]->IsString()) {
-      String::Utf8Value hkeyStr(info[0]->ToString());
+      String::Utf8Value hkeyStr(isolate, info[0]);
       auto iter = hkeyMap.find(*hkeyStr);
       if (iter == hkeyMap.end()) {
         Nan::ThrowError("Invalid hive specified");
@@ -560,8 +575,8 @@ NAN_METHOD(RegGetValue) {
       memcpy(&key, node::Buffer::Data(info[0]), sizeof(HKEY));
     }
 
-    String::Utf8Value pathV8(info[1]->ToString());
-    String::Utf8Value valueV8(info[2]->ToString());
+    String::Utf8Value pathV8(isolate, info[1]);
+    String::Utf8Value valueV8(isolate, info[2]);
 
     std::wstring path = toWC(*pathV8, CodePage::UTF8, pathV8.length());
     std::wstring value = toWC(*valueV8, CodePage::UTF8, valueV8.length());
@@ -585,15 +600,15 @@ NAN_METHOD(RegGetValue) {
     }
 
     Local<Object> result = New<Object>();
-    result->Set("type"_n, regTypeToString(type));
+    result->Set(context, "type"_n, regTypeToString(type));
 
     switch (type) {
       case REG_BINARY: {
-        result->Set("value"_n, CopyBuffer(reinterpret_cast<char*>(buffer.get()), dataSize).ToLocalChecked());
+        result->Set(context, "value"_n, CopyBuffer(reinterpret_cast<char*>(buffer.get()), dataSize).ToLocalChecked());
       } break;
       case REG_DWORD: {
         DWORD val = *reinterpret_cast<DWORD*>(buffer.get());
-        result->Set("value"_n, New<Number>(val));
+        result->Set(context, "value"_n, New<Number>(val));
       } break;
       case REG_DWORD_BIG_ENDIAN: {
         union {
@@ -603,20 +618,20 @@ NAN_METHOD(RegGetValue) {
         for (int i = 0; i < 4; ++i) {
           temp[i] = buffer[3 - i];
         }
-        result->Set("value"_n, New<Number>(val));
+        result->Set(context, "value"_n, New<Number>(val));
       } break;
       case REG_MULTI_SZ: {
-        result->Set("value"_n, convertMultiSZ(reinterpret_cast<wchar_t*>(buffer.get()), dataSize));
+        result->Set(context, "value"_n, convertMultiSZ(reinterpret_cast<wchar_t*>(buffer.get()), dataSize));
       } break;
       case REG_NONE: { } break;
       case REG_QWORD: {
-        result->Set("value"_n, New<Number>(static_cast<double>(*reinterpret_cast<uint64_t*>(buffer.get()))));
+        result->Set(context, "value"_n, New<Number>(static_cast<double>(*reinterpret_cast<uint64_t*>(buffer.get()))));
       } break;
       case REG_SZ:
       case REG_EXPAND_SZ:
       case REG_LINK: {
         const wchar_t *buf = reinterpret_cast<wchar_t*>(buffer.get());
-        result->Set("value"_n, New<String>(toMB(buf, CodePage::UTF8, (dataSize / sizeof(wchar_t)) - 1)).ToLocalChecked());
+        result->Set(context, "value"_n, New<String>(toMB(buf, CodePage::UTF8, (dataSize / sizeof(wchar_t)) - 1)).ToLocalChecked());
       } break;
     }
 
@@ -648,6 +663,8 @@ NAN_METHOD(RegEnumKeys) {
       return;
     }
 
+    Local<Context> context = Nan::GetCurrentContext();
+
     Local<Array> result = New<Array>();
     std::shared_ptr<wchar_t[]> keyBuffer(new wchar_t[maxSubkeyLen + 1]);
     std::shared_ptr<wchar_t[]> classBuffer(new wchar_t[maxClassLen + 1]);
@@ -662,10 +679,10 @@ NAN_METHOD(RegEnumKeys) {
       }
 
       Local<Object> item = New<Object>();
-      item->Set("class"_n, New<String>(toMB(classBuffer.get(), CodePage::UTF8, classLen)).ToLocalChecked());
-      item->Set("key"_n, New<String>(toMB(keyBuffer.get(), CodePage::UTF8, keyLen)).ToLocalChecked());
-      item->Set("lastWritten"_n, New<Number>(static_cast<double>(toTimestamp(lastWritten))));
-      result->Set(i, item);
+      item->Set(context, "class"_n, New<String>(toMB(classBuffer.get(), CodePage::UTF8, classLen)).ToLocalChecked());
+      item->Set(context, "key"_n, New<String>(toMB(keyBuffer.get(), CodePage::UTF8, keyLen)).ToLocalChecked());
+      item->Set(context, "lastWritten"_n, New<Number>(static_cast<double>(toTimestamp(lastWritten))));
+      result->Set(context, i, item);
     }
 
     info.GetReturnValue().Set(result);
@@ -695,6 +712,8 @@ NAN_METHOD(RegEnumValues) {
       return;
     }
 
+    Local<Context> context = Nan::GetCurrentContext();
+
     Local<Array> result = New<Array>();
     std::shared_ptr<wchar_t[]> keyBuffer(new wchar_t[maxKeyLen + 1]);
     for (DWORD i = 0; i < numValues; ++i) {
@@ -707,9 +726,9 @@ NAN_METHOD(RegEnumValues) {
       }
 
       Local<Object> item = New<Object>();
-      item->Set("type"_n, regTypeToString(type));
-      item->Set("key"_n, New<String>(toMB(keyBuffer.get(), CodePage::UTF8, keyLen)).ToLocalChecked());
-      result->Set(i, item);
+      item->Set(context, "type"_n, regTypeToString(type));
+      item->Set(context, "key"_n, New<String>(toMB(keyBuffer.get(), CodePage::UTF8, keyLen)).ToLocalChecked());
+      result->Set(context, i, item);
     }
 
     info.GetReturnValue().Set(result);
@@ -884,6 +903,7 @@ static const std::unordered_map<std::string, REFKNOWNFOLDERID> knownFolders {
 
 NAN_METHOD(SHGetKnownFolderPath) {
   Isolate* isolate = Isolate::GetCurrent();
+  Local<Context> context = Nan::GetCurrentContext();
 
   if ((info.Length() < 1) || (info.Length() > 2)) {
     Nan::ThrowError("Expected 1-2 parameters (folderId, flag)");
@@ -894,7 +914,7 @@ NAN_METHOD(SHGetKnownFolderPath) {
   DWORD flag = KF_FLAG_DEFAULT;
 
   {
-    String::Utf8Value folderIdV8(info[0]->ToString());
+    String::Utf8Value folderIdV8(isolate, info[0]);
     auto folderId = knownFolders.find(*folderIdV8);
 
     if (folderId == knownFolders.end()) {
@@ -912,7 +932,7 @@ NAN_METHOD(SHGetKnownFolderPath) {
     Local<Array> flagList = Local<Array>::Cast(info[1]);
 
     for (uint32_t i = 0; i < flagList->Length(); ++i) {
-      v8::String::Utf8Value flagV8(flagList->Get(i)->ToString());
+      v8::String::Utf8Value flagV8(isolate, flagList->Get(context, i).ToLocalChecked());
 
       auto flagIter = knownFolderFlags.find(*flagV8);
       if (flagIter == knownFolderFlags.end()) {
@@ -941,16 +961,18 @@ NAN_METHOD(SHGetKnownFolderPath) {
 }
 
 NAN_METHOD(GetModuleList) {
-  auto convertME = [](const MODULEENTRY32W &mod) -> Local<Object> {
+  Isolate* isolate = Isolate::GetCurrent();
+
+  Local<Context> context = Nan::GetCurrentContext();
+  
+  auto convertME = [&context](const MODULEENTRY32W &mod) -> Local<Object> {
     Local<Object> item = New<Object>();
-    item->Set("baseAddr"_n, New<Number>(reinterpret_cast<uint64_t>(mod.modBaseAddr)));
-    item->Set("baseSize"_n, New<Number>(mod.modBaseSize));
-    item->Set("module"_n, toV8(mod.szModule));
-    item->Set("exePath"_n, toV8(mod.szExePath));
+    item->Set(context, "baseAddr"_n, New<Number>(reinterpret_cast<uint64_t>(mod.modBaseAddr)));
+    item->Set(context, "baseSize"_n, New<Number>(mod.modBaseSize));
+    item->Set(context, "module"_n, toV8(mod.szModule));
+    item->Set(context, "exePath"_n, toV8(mod.szExePath));
     return item;
   };
-
-  Isolate* isolate = Isolate::GetCurrent();
 
   if (info.Length() != 1) {
     Nan::ThrowError("Expected 1 parameter (process id)");
@@ -959,13 +981,13 @@ NAN_METHOD(GetModuleList) {
 
   Local<Array> modules = New<Array>();
 
-  HANDLE snap = ::CreateToolhelp32Snapshot(TH32CS_SNAPMODULE, info[0]->Uint32Value());
+  HANDLE snap = ::CreateToolhelp32Snapshot(TH32CS_SNAPMODULE, info[0]->Uint32Value(context).ToChecked());
   MODULEENTRY32W me32;
   me32.dwSize = sizeof(MODULEENTRY32W);
   int idx = 0;
   bool more = ::Module32FirstW(snap, &me32);
   while (more) {
-    modules->Set(idx++, convertME(me32));
+    modules->Set(context, idx++, convertME(me32));
     more = ::Module32NextW(snap, &me32);
   }
 
@@ -973,14 +995,15 @@ NAN_METHOD(GetModuleList) {
 }
 
 NAN_METHOD(GetProcessList) {
+  Local<Context> context = Nan::GetCurrentContext();
   
-  auto convertPE = [](const PROCESSENTRY32W &process) -> Local<Object> {
+  auto convertPE = [&context](const PROCESSENTRY32W &process) -> Local<Object> {
     Local<Object> item = New<Object>();
-    item->Set("numThreads"_n, New<Number>(process.cntThreads));
-    item->Set("processID"_n, New<Number>(process.th32ProcessID));
-    item->Set("parentProcessID"_n, New<Number>(process.th32ParentProcessID));
-    item->Set("priClassBase"_n, New<Number>(process.pcPriClassBase));
-    item->Set("exeFile"_n, toV8(process.szExeFile));
+    item->Set(context, "numThreads"_n, New<Number>(process.cntThreads));
+    item->Set(context, "processID"_n, New<Number>(process.th32ProcessID));
+    item->Set(context, "parentProcessID"_n, New<Number>(process.th32ParentProcessID));
+    item->Set(context, "priClassBase"_n, New<Number>(process.pcPriClassBase));
+    item->Set(context, "exeFile"_n, toV8(process.szExeFile));
     return item;
   };
 
@@ -993,7 +1016,7 @@ NAN_METHOD(GetProcessList) {
     pe32.dwSize = sizeof(PROCESSENTRY32W);
     bool more = ::Process32FirstW(snap, &pe32);
     while (more) {
-      result->Set(idx++, convertPE(pe32));
+      result->Set(context, idx++, convertPE(pe32));
       more = ::Process32NextW(snap, &pe32);
     }
     ::CloseHandle(snap);
@@ -1004,6 +1027,7 @@ NAN_METHOD(GetProcessList) {
 
 NAN_METHOD(SetProcessPreferredUILanguages) {
   Isolate* isolate = Isolate::GetCurrent();
+  Local<Context> context = Nan::GetCurrentContext();
 
   if (info.Length() != 1) {
     Nan::ThrowError("Expected 1 parameter (the list of language codes, in the format \"en-US\")");
@@ -1017,8 +1041,8 @@ NAN_METHOD(SetProcessPreferredUILanguages) {
 
   ULONG count = languages->Length();
 
-  for (int i = 0; i < count; ++i) {
-    v8::String::Utf8Value langV8(languages->Get(i)->ToString());
+  for (ULONG i = 0; i < count; ++i) {
+    v8::String::Utf8Value langV8(isolate, languages->Get(context, i).ToLocalChecked());
     const std::wstring langU16 = toWC(*langV8, CodePage::UTF8, langV8.length());
     buffer.resize(offset + langU16.length() + 2);
     wcsncpy(&buffer[offset], langU16.c_str(), langU16.length() + 1);
@@ -1036,6 +1060,7 @@ void GetPreferredLanguage(const Nan::FunctionCallbackInfo<v8::Value> &info,
                           BOOL (*func)(DWORD, PULONG, PZZWSTR, PULONG),
                           const char *funcName) {
   Isolate* isolate = Isolate::GetCurrent();
+  Local<Context> context = Nan::GetCurrentContext();
 
   ULONG numLanguages = 0;
   std::vector<wchar_t> buffer;
@@ -1056,9 +1081,9 @@ void GetPreferredLanguage(const Nan::FunctionCallbackInfo<v8::Value> &info,
 
   wchar_t *buf = &buffer[0];
 
-  for (int i = 0; i < numLanguages; ++i) {
+  for (ULONG i = 0; i < numLanguages; ++i) {
     size_t len = wcslen(buf);
-    result->Set(i, New(toMB(buf, CodePage::UTF8, len).c_str()).ToLocalChecked());
+    result->Set(context, i, New(toMB(buf, CodePage::UTF8, len).c_str()).ToLocalChecked());
     buf += len + 1;
   }
 
