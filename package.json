@@ -11,6 +11,6 @@
   "dependencies": {
     "autogypi": "^0.2.2",
     "nan": "^2.14.0",
-    "node-gyp": "^5.0.0"
+    "node-gyp": "^6.0.0"
   }
 }
