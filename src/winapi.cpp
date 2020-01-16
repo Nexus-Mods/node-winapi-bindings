@@ -1025,6 +1025,77 @@ NAN_METHOD(GetProcessList) {
   info.GetReturnValue().Set(result);
 }
 
+NAN_METHOD(GetProcessWindowList) {
+  if (info.Length() != 1) {
+    Nan::ThrowError("Expected 1 parameter (the process id)");
+    return;
+  }
+
+  Isolate* isolate = Isolate::GetCurrent();
+  Local<Context> context = Nan::GetCurrentContext();
+
+  DWORD pid = info[0].As<Number>()->Uint32Value(context).FromMaybe(0);
+
+  Local<Array> res = Nan::New<Array>();
+  uint32_t resIdx = 0;
+
+  char textBuffer[1024];
+
+  HWND windowIter = nullptr;
+  while (true) {
+    // FindWindowEx, in contrast to EnumWindows, also lists metro-style windows.
+    // Unfortunately FindWindowEx is not technically safe since the window list can change asynchronously but
+    // even the windows-published ProcessExplorer uses it this way so - pffft.
+    windowIter = FindWindowEx(nullptr, windowIter, nullptr, nullptr);
+    if (windowIter == nullptr) {
+      break;
+    }
+    // ignore all non-top-level windows
+    if (GetWindow(windowIter, GW_OWNER) != 0) {
+      continue;
+    }
+
+    // ignore windows of other processes
+    DWORD windowProcess = 0;
+    GetWindowThreadProcessId(windowIter, &windowProcess);
+    if (windowProcess != pid) {
+      continue;
+    }
+
+    WINDOWINFO info;
+    GetWindowInfo(windowIter, &info);
+
+    uint64_t winId = reinterpret_cast<uint64_t>(windowIter);
+    if (((info.dwStyle & WS_CAPTION) != 0) && ((info.dwStyle & WS_CHILD) == 0)) {
+      res->Set(context, resIdx++, Nan::New<Number>(winId));
+    }
+  }
+
+  info.GetReturnValue().Set(res);
+}
+
+NAN_METHOD(SetForegroundWin) {
+  if (info.Length() != 1) {
+    Nan::ThrowError("Expected 1 parameter (window id)");
+    return;
+  }
+
+  Isolate* isolate = Isolate::GetCurrent();
+  Local<Context> context = Nan::GetCurrentContext();
+
+  uint64_t winId = info[0].As<Number>()->Uint32Value(context).FromMaybe(0);
+
+  HWND hwnd = reinterpret_cast<HWND>(winId);
+
+  if (::IsIconic(hwnd)) {
+    ::ShowWindow(hwnd, 9);
+  }
+
+  BOOL res = ::SetForegroundWindow(hwnd);
+
+  info.GetReturnValue().Set(res);
+}
+
 NAN_METHOD(SetProcessPreferredUILanguages) {
   Isolate* isolate = Isolate::GetCurrent();
   Local<Context> context = Nan::GetCurrentContext();
@@ -1146,6 +1217,11 @@ NAN_MODULE_INIT(Init) {
     GetFunction(New<FunctionTemplate>(GetProcessList)).ToLocalChecked());
   Nan::Set(target, "GetModuleList"_n,
     GetFunction(New<FunctionTemplate>(GetModuleList)).ToLocalChecked());
+
+  Nan::Set(target, "GetProcessWindowList"_n,
+    GetFunction(New<FunctionTemplate>(GetProcessWindowList)).ToLocalChecked());
+  Nan::Set(target, "SetForegroundWindow"_n,
+    GetFunction(New<FunctionTemplate>(SetForegroundWin)).ToLocalChecked());
 
   Nan::Set(target, "GetUserPreferredUILanguages"_n,
     GetFunction(New<FunctionTemplate>(GetUserPreferredUILanguages)).ToLocalChecked());
