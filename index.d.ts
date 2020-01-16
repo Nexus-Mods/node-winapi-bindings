@@ -60,6 +60,11 @@ export function GetProcessList(): ProcessEntry[];
 // get list of modules loaded in the specified process
 export function GetModuleList(pid: number): ModuleEntry[];
 
+// get list of main windows of the specified process
+export function GetProcessWindowList(pid: number): number[];
+// bring the specified window to the front (and restores it if necessary)
+export function SetForegroundWindow(hwnd: number): boolean;
+
 // execute external application
 export function ShellExecuteEx(options: ShellExecuteOptions): void;
 
