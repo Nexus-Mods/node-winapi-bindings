@@ -123,3 +123,56 @@ export function GetProcessPreferredUILanguages(): string[];
 // set list of process-preferred UI languages (windows seem to pick the first language actually installed, so
 // setting a language that the user doesn't have installed has no effect, no error gets reported)
 export function SetProcessPreferredUILanguages(languages: string[]): void;
+
+export interface ITaskRegistrationInfo {
+  Author?: string;
+  Date?: string;
+  Description?: string;
+  Documentation?: string;
+  Source?: string;
+  URI?: string;
+}
+
+export interface ITaskSettings {
+  AllowDemandStart?: boolean;
+}
+
+export interface ITaskAction {
+  Path: string;
+  Arguments?: string;
+  Id?: string;
+  WorkingDirectory?: string;
+}
+
+export interface ITaskOptions {
+  user: string;
+
+  registrationInfo?: ITaskRegistrationInfo;
+  taskSettings: ITaskSettings;
+
+  actions: ITaskAction[];
+}
+
+export interface ITaskEntry {
+  Name: string;
+  Enabled: boolean;
+  LastTaskResult: number;
+}
+
+// Create a task in the task scheduler. The name is unique, if a task by that name exists it will be replaced
+// currently all tasks are created on the top-level. In the future we will support names like "folder\taskname"
+// such that a task "taskname" is created within the task folder "folder" but this is not supported _now_, I'm
+// just telling you so you don't create tasks with a \ in their name because the behaviour of that will change
+export function CreateTask(name: string, options: ITaskOptions);
+
+// get list of tasks
+// Note: this lists only tasks, not subfolders. There is currently no way to get at the list of subfolders
+// Also note: This silently skips any tasks that we can't access (e.g. for security reasons) so this list may
+//   not be the same as what you get from the ui.
+export function GetTask(path?: string): ITaskEntry[];
+
+// delete a task
+export function DeleteTask(name: string);
+
+// run a task
+export function RunTask(name: string);

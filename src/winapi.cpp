@@ -1,14 +1,23 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+#include <atlbase.h>
 #include <tlhelp32.h>
 #include <shellapi.h>
 #include <Shlobj.h>
+#include <taskschd.h>
+#include <comdef.h>
+#include <wchar.h>
+#include <stdio.h>
 #include <string>
+#include <functional>
 #include <unordered_map>
 #include <list>
 #include <nan.h>
 #include <iostream>
 #include "string_cast.h"
+
+#pragma comment(lib, "taskschd.lib")
+
 
 using namespace Nan;
 using namespace v8;
@@ -59,7 +68,7 @@ void setNodeErrorCode(v8::Local<v8::Object> err, DWORD errCode) {
 inline v8::Local<v8::Value> WinApiException(
   DWORD lastError
   , const char *func = nullptr
-  , const char* path = nullptr) {
+  , const char *path = nullptr) {
 
   Local<Context> context = Nan::GetCurrentContext();
 
@@ -67,6 +76,18 @@ inline v8::Local<v8::Value> WinApiException(
   std::string err = toMB(errStr.c_str(), CodePage::UTF8, errStr.size()) + " (" + std::to_string(lastError) + ")";
   v8::Local<v8::Value> res = node::WinapiErrnoException(v8::Isolate::GetCurrent(), lastError, func, err.c_str(), path);
   setNodeErrorCode(res->ToObject(context).ToLocalChecked(), lastError);
+  return res;
+}
+
+inline v8::Local<v8::Value> HResultException(HRESULT hr, const char *func = nullptr, const char *path = nullptr) {
+  Local<Context> context = Nan::GetCurrentContext();
+
+  _com_error err(hr);
+  LPCWSTR errMsg = err.ErrorMessage();
+  std::string errMsgUtf8 = toMB(errMsg, CodePage::UTF8, wcslen(errMsg));
+
+  v8::Local<v8::Value> res = node::WinapiErrnoException(v8::Isolate::GetCurrent(), hr & 0xFFFF, func, errMsgUtf8.c_str(), path);
+  setNodeErrorCode(res->ToObject(context).ToLocalChecked(), hr & 0xFFFF);
   return res;
 }
 
@@ -81,7 +102,7 @@ std::wstring toWC(const Local<Value> &input) {
 }
 
 Local<Value> toV8(const wchar_t *input) {
-  return New<String>(toMB(input, CodePage::UTF8, (std::numeric_limits<size_t>::max)())).ToLocalChecked();
+  return Nan::New<String>(toMB(input, CodePage::UTF8, (std::numeric_limits<size_t>::max)())).ToLocalChecked();
 }
 
 
@@ -157,10 +178,10 @@ NAN_METHOD(GetDiskFreeSpaceEx) {
       return;
     }
 
-    Local<Object> result = New<Object>();
-    result->Set(context, "total"_n, New<Number>(static_cast<double>(totalNumberOfBytes.QuadPart)));
-    result->Set(context, "free"_n, New<Number>(static_cast<double>(totalNumberOfFreeBytes.QuadPart)));
-    result->Set(context, "freeToCaller"_n, New<Number>(static_cast<double>(freeBytesAvailableToCaller.QuadPart)));
+    Local<Object> result = Nan::New<Object>();
+    result->Set(context, "total"_n, Nan::New<Number>(static_cast<double>(totalNumberOfBytes.QuadPart)));
+    result->Set(context, "free"_n, Nan::New<Number>(static_cast<double>(totalNumberOfFreeBytes.QuadPart)));
+    result->Set(context, "freeToCaller"_n, Nan::New<Number>(static_cast<double>(freeBytesAvailableToCaller.QuadPart)));
 
     info.GetReturnValue().Set(result);
   }
@@ -186,7 +207,7 @@ NAN_METHOD(GetVolumePathName) {
       return;
     }
 
-    info.GetReturnValue().Set(New<String>(toMB(buffer, CodePage::UTF8, (std::numeric_limits<size_t>::max)())).ToLocalChecked());
+    info.GetReturnValue().Set(Nan::New<String>(toMB(buffer, CodePage::UTF8, (std::numeric_limits<size_t>::max)())).ToLocalChecked());
   }
   catch (const std::exception &e) {
     Nan::ThrowError(e.what());
@@ -327,7 +348,7 @@ NAN_METHOD(GetPrivateProfileSection) {
 
     DWORD charCount = ::GetPrivateProfileSectionW(appName.c_str(), buffer.get(), size, fileName.c_str());
 
-    Local<Object> result = New<Object>();
+    Local<Object> result = Nan::New<Object>();
     wchar_t *start = buffer.get();
     wchar_t *ptr = start;
     // double check. the list is supposed to end on a double zero termination but to ensure we don't overrun
@@ -338,9 +359,9 @@ NAN_METHOD(GetPrivateProfileSection) {
       wchar_t *eqPos = wcschr(ptr, L'=');
       size_t valLength;
       if (eqPos != nullptr) {
-        lastKey = New<String>(toMB(ptr, CodePage::UTF8, eqPos - ptr)).ToLocalChecked();
+        lastKey = Nan::New<String>(toMB(ptr, CodePage::UTF8, eqPos - ptr)).ToLocalChecked();
         valLength = wcslen(eqPos);
-        lastValue = New<String>(toMB(eqPos + 1, CodePage::UTF8, valLength - 1)).ToLocalChecked();
+        lastValue = Nan::New<String>(toMB(eqPos + 1, CodePage::UTF8, valLength - 1)).ToLocalChecked();
         ptr = eqPos + valLength + 1;
         result->Set(context, lastKey, lastValue);
       }
@@ -359,7 +380,7 @@ NAN_METHOD(GetPrivateProfileSection) {
 
 Local<Array> convertMultiSZ(wchar_t *input, DWORD maxLength) {
   Local<Context> context = Nan::GetCurrentContext();
-  Local<Array> result = New<Array>();
+  Local<Array> result = Nan::New<Array>();
   wchar_t *start = input;
   wchar_t *ptr = start;
   int idx = 0;
@@ -367,7 +388,7 @@ Local<Array> convertMultiSZ(wchar_t *input, DWORD maxLength) {
   // the buffer, also verify we don't exceed the character count
   while ((*ptr != '\0') && ((ptr - start) < maxLength)) {
     size_t len = wcslen(ptr);
-    result->Set(context, idx++, New<String>(toMB(ptr, CodePage::UTF8, len)).ToLocalChecked());
+    result->Set(context, idx++, Nan::New<String>(toMB(ptr, CodePage::UTF8, len)).ToLocalChecked());
     ptr += len + 1;
   }
 
@@ -515,7 +536,7 @@ NAN_METHOD(WithRegOpen) {
     auto buf = CopyBuffer(reinterpret_cast<char*>(&key), sizeof(HKEY)).ToLocalChecked();
     Local<Value> argv[1] = { buf };
     AsyncResource async("callback");
-    v8::Local<v8::Object> target = New<v8::Object>();
+    v8::Local<v8::Object> target = Nan::New<v8::Object>();
     async.runInAsyncScope(target, cb, 1, argv);
 
     ::RegCloseKey(key);
@@ -599,7 +620,7 @@ NAN_METHOD(RegGetValue) {
       return;
     }
 
-    Local<Object> result = New<Object>();
+    Local<Object> result = Nan::New<Object>();
     result->Set(context, "type"_n, regTypeToString(type));
 
     switch (type) {
@@ -608,7 +629,7 @@ NAN_METHOD(RegGetValue) {
       } break;
       case REG_DWORD: {
         DWORD val = *reinterpret_cast<DWORD*>(buffer.get());
-        result->Set(context, "value"_n, New<Number>(val));
+        result->Set(context, "value"_n, Nan::New<Number>(val));
       } break;
       case REG_DWORD_BIG_ENDIAN: {
         union {
@@ -618,20 +639,20 @@ NAN_METHOD(RegGetValue) {
         for (int i = 0; i < 4; ++i) {
           temp[i] = buffer[3 - i];
         }
-        result->Set(context, "value"_n, New<Number>(val));
+        result->Set(context, "value"_n, Nan::New<Number>(val));
       } break;
       case REG_MULTI_SZ: {
         result->Set(context, "value"_n, convertMultiSZ(reinterpret_cast<wchar_t*>(buffer.get()), dataSize));
       } break;
       case REG_NONE: { } break;
       case REG_QWORD: {
-        result->Set(context, "value"_n, New<Number>(static_cast<double>(*reinterpret_cast<uint64_t*>(buffer.get()))));
+        result->Set(context, "value"_n, Nan::New<Number>(static_cast<double>(*reinterpret_cast<uint64_t*>(buffer.get()))));
       } break;
       case REG_SZ:
       case REG_EXPAND_SZ:
       case REG_LINK: {
         const wchar_t *buf = reinterpret_cast<wchar_t*>(buffer.get());
-        result->Set(context, "value"_n, New<String>(toMB(buf, CodePage::UTF8, (dataSize / sizeof(wchar_t)) - 1)).ToLocalChecked());
+        result->Set(context, "value"_n, Nan::New<String>(toMB(buf, CodePage::UTF8, (dataSize / sizeof(wchar_t)) - 1)).ToLocalChecked());
       } break;
     }
 
@@ -665,7 +686,7 @@ NAN_METHOD(RegEnumKeys) {
 
     Local<Context> context = Nan::GetCurrentContext();
 
-    Local<Array> result = New<Array>();
+    Local<Array> result = Nan::New<Array>();
     std::shared_ptr<wchar_t[]> keyBuffer(new wchar_t[maxSubkeyLen + 1]);
     std::shared_ptr<wchar_t[]> classBuffer(new wchar_t[maxClassLen + 1]);
     for (DWORD i = 0; i < numSubkeys; ++i) {
@@ -678,10 +699,10 @@ NAN_METHOD(RegEnumKeys) {
         return;
       }
 
-      Local<Object> item = New<Object>();
-      item->Set(context, "class"_n, New<String>(toMB(classBuffer.get(), CodePage::UTF8, classLen)).ToLocalChecked());
-      item->Set(context, "key"_n, New<String>(toMB(keyBuffer.get(), CodePage::UTF8, keyLen)).ToLocalChecked());
-      item->Set(context, "lastWritten"_n, New<Number>(static_cast<double>(toTimestamp(lastWritten))));
+      Local<Object> item = Nan::New<Object>();
+      item->Set(context, "class"_n, Nan::New<String>(toMB(classBuffer.get(), CodePage::UTF8, classLen)).ToLocalChecked());
+      item->Set(context, "key"_n, Nan::New<String>(toMB(keyBuffer.get(), CodePage::UTF8, keyLen)).ToLocalChecked());
+      item->Set(context, "lastWritten"_n, Nan::New<Number>(static_cast<double>(toTimestamp(lastWritten))));
       result->Set(context, i, item);
     }
 
@@ -714,7 +735,7 @@ NAN_METHOD(RegEnumValues) {
 
     Local<Context> context = Nan::GetCurrentContext();
 
-    Local<Array> result = New<Array>();
+    Local<Array> result = Nan::New<Array>();
     std::shared_ptr<wchar_t[]> keyBuffer(new wchar_t[maxKeyLen + 1]);
     for (DWORD i = 0; i < numValues; ++i) {
       DWORD keyLen = maxKeyLen + 1;
@@ -725,9 +746,9 @@ NAN_METHOD(RegEnumValues) {
         return;
       }
 
-      Local<Object> item = New<Object>();
+      Local<Object> item = Nan::New<Object>();
       item->Set(context, "type"_n, regTypeToString(type));
-      item->Set(context, "key"_n, New<String>(toMB(keyBuffer.get(), CodePage::UTF8, keyLen)).ToLocalChecked());
+      item->Set(context, "key"_n, Nan::New<String>(toMB(keyBuffer.get(), CodePage::UTF8, keyLen)).ToLocalChecked());
       result->Set(context, i, item);
     }
 
@@ -759,7 +780,7 @@ static const std::unordered_map<std::string, DWORD> knownFolderFlags {
 
 static const std::unordered_map<std::string, REFKNOWNFOLDERID> knownFolders {
   { "AccountPictures", FOLDERID_AccountPictures },
-  { "AddNewPrograms", FOLDERID_AddNewPrograms },
+  { "AddNan::NewPrograms", FOLDERID_AddNewPrograms },
   { "AdminTools", FOLDERID_AdminTools },
   { "AllAppMods", FOLDERID_AllAppMods },
   { "AppCaptures", FOLDERID_AppCaptures },
@@ -955,7 +976,7 @@ NAN_METHOD(SHGetKnownFolderPath) {
     return;
   }
 
-  info.GetReturnValue().Set(New<String>(toMB(result, CodePage::UTF8, wcslen(result))).ToLocalChecked());
+  info.GetReturnValue().Set(Nan::New<String>(toMB(result, CodePage::UTF8, wcslen(result))).ToLocalChecked());
 
   CoTaskMemFree(result);
 }
@@ -966,9 +987,9 @@ NAN_METHOD(GetModuleList) {
   Local<Context> context = Nan::GetCurrentContext();
   
   auto convertME = [&context](const MODULEENTRY32W &mod) -> Local<Object> {
-    Local<Object> item = New<Object>();
-    item->Set(context, "baseAddr"_n, New<Number>(reinterpret_cast<uint64_t>(mod.modBaseAddr)));
-    item->Set(context, "baseSize"_n, New<Number>(mod.modBaseSize));
+    Local<Object> item = Nan::New<Object>();
+    item->Set(context, "baseAddr"_n, Nan::New<Number>(reinterpret_cast<uint64_t>(mod.modBaseAddr)));
+    item->Set(context, "baseSize"_n, Nan::New<Number>(mod.modBaseSize));
     item->Set(context, "module"_n, toV8(mod.szModule));
     item->Set(context, "exePath"_n, toV8(mod.szExePath));
     return item;
@@ -979,7 +1000,7 @@ NAN_METHOD(GetModuleList) {
     return;
   }
 
-  Local<Array> modules = New<Array>();
+  Local<Array> modules = Nan::New<Array>();
 
   HANDLE snap = ::CreateToolhelp32Snapshot(TH32CS_SNAPMODULE, info[0]->Uint32Value(context).ToChecked());
   MODULEENTRY32W me32;
@@ -998,16 +1019,16 @@ NAN_METHOD(GetProcessList) {
   Local<Context> context = Nan::GetCurrentContext();
   
   auto convertPE = [&context](const PROCESSENTRY32W &process) -> Local<Object> {
-    Local<Object> item = New<Object>();
-    item->Set(context, "numThreads"_n, New<Number>(process.cntThreads));
-    item->Set(context, "processID"_n, New<Number>(process.th32ProcessID));
-    item->Set(context, "parentProcessID"_n, New<Number>(process.th32ParentProcessID));
-    item->Set(context, "priClassBase"_n, New<Number>(process.pcPriClassBase));
+    Local<Object> item = Nan::New<Object>();
+    item->Set(context, "numThreads"_n, Nan::New<Number>(process.cntThreads));
+    item->Set(context, "processID"_n, Nan::New<Number>(process.th32ProcessID));
+    item->Set(context, "parentProcessID"_n, Nan::New<Number>(process.th32ParentProcessID));
+    item->Set(context, "priClassBase"_n, Nan::New<Number>(process.pcPriClassBase));
     item->Set(context, "exeFile"_n, toV8(process.szExeFile));
     return item;
   };
 
-  Local<Array> result = New<Array>();
+  Local<Array> result = Nan::New<Array>();
   int idx = 0;
   HANDLE snap = ::CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
   PROCESSENTRY32W pe32;
@@ -1038,8 +1059,6 @@ NAN_METHOD(GetProcessWindowList) {
 
   Local<Array> res = Nan::New<Array>();
   uint32_t resIdx = 0;
-
-  char textBuffer[1024];
 
   HWND windowIter = nullptr;
   while (true) {
@@ -1148,13 +1167,13 @@ void GetPreferredLanguage(const Nan::FunctionCallbackInfo<v8::Value> &info,
     return;
   }
 
-  Local<Array> result = New<Array>();
+  Local<Array> result = Nan::New<Array>();
 
   wchar_t *buf = &buffer[0];
 
   for (ULONG i = 0; i < numLanguages; ++i) {
     size_t len = wcslen(buf);
-    result->Set(context, i, New(toMB(buf, CodePage::UTF8, len).c_str()).ToLocalChecked());
+    result->Set(context, i, Nan::New(toMB(buf, CodePage::UTF8, len).c_str()).ToLocalChecked());
     buf += len + 1;
   }
 
@@ -1173,6 +1192,347 @@ NAN_METHOD(GetProcessPreferredUILanguages) {
   GetPreferredLanguage(info, &GetProcessPreferredUILanguages, "GetProcessPreferredUILanguages");
 }
 
+ITaskService *getScheduler(Isolate *isolate) {
+  ITaskService *sched;
+  HRESULT res = CoCreateInstance(CLSID_TaskScheduler,
+    nullptr,
+    CLSCTX_INPROC_SERVER,
+    IID_ITaskService,
+    (void **)&sched);
+
+  if (FAILED(res)) {
+    isolate->ThrowException(HResultException(res, "CoCreateInstance"));
+    return nullptr;
+  }
+
+  res = sched->Connect(_variant_t(), _variant_t(), _variant_t(), _variant_t());
+
+  if (FAILED(res)) {
+    isolate->ThrowException(HResultException(res, "ITaskService::Connect"));
+    return nullptr;
+  }
+
+  return sched;
+}
+
+template<typename T>
+using clean_ptr = std::unique_ptr<T, std::function<void(T*)>>;
+
+template<typename T, typename FuncT>
+bool clean_ptr_assign(Isolate *isolate, clean_ptr<T> &target, const FuncT &cb, const char *funcName, bool throwOnError = true) {
+  T *temp = nullptr;
+  HRESULT res = cb(&temp);
+  if (SUCCEEDED(res)) {
+    target.reset(temp);
+    return true;
+  }
+  else {
+    if (throwOnError) {
+      isolate->ThrowException(HResultException(res, funcName));
+    }
+    return false;
+  }
+}
+
+#define ASSIGN(ctx, obj, params, fieldName, convFunc) {\
+  Local<Value> val = params->Get(ctx, # fieldName ## _n).ToLocalChecked();\
+  if (!val->IsNullOrUndefined()) {\
+    obj->put_ ## fieldName ## (convFunc(ctx, val));\
+  }\
+}
+
+
+Local<Value> toV8(VARIANT_BOOL input) {
+  return Nan::New<Boolean>(static_cast<bool>(input));
+}
+
+Local<Value> toV8(LONG input) {
+  return Nan::New<Number>(input);
+}
+
+#define COMTOV8(ctx, comObj, v8Obj, key, type) {\
+    type temp; \
+    comObj->get_ ## key ## (&temp);\
+    v8Obj->Set(ctx, # key ## _n, toV8(temp));\
+}
+
+#define TOSTRING(ctx, input) toWC(input).c_str()
+#define TOBSTRING(ctx, input) CComBSTR(toWC(input).c_str())
+
+bool toBool(const Local<Context> context, const Local<Value> input) {
+  return input->IsTrue();
+}
+
+Local<Object> getObject(const Local<Context> &context, const Local<Object> &obj, const Local<String> key) {
+  Local<Value> temp = obj->Get(context, key).ToLocalChecked();
+  if (temp->IsNullOrUndefined()) {
+    return Nan::New<Object>();
+  }
+  return temp->ToObject(context).ToLocalChecked();
+}
+
+std::wstring getOr(const Local<Context> &context, const Local<Object> &obj, const Local<String> &key, LPCWSTR fallback) {
+  return obj->Has(context, key).ToChecked()
+      ? toWC(obj->Get(context, key).ToLocalChecked())
+      : fallback;
+}
+
+template<typename T>
+void CoRelease(T *ptr) {
+  ptr->Release();
+}
+
+bool addAction(Local<Context> context, ITaskDefinition *task, const Local<Object> &settings) {
+  Isolate *isolate = context->GetIsolate();
+
+  clean_ptr<IActionCollection> actions(nullptr, CoRelease<IActionCollection>);
+  if (!clean_ptr_assign(isolate, actions, [&](IActionCollection **out) {
+    return task->get_Actions(out);
+    }, "IActionCollection::get_Actions")) {
+    return false;
+  }
+
+  clean_ptr<IAction> action(nullptr, CoRelease<IAction>);
+  if (!clean_ptr_assign(isolate, action, [&](IAction **out) {
+    return actions->Create(TASK_ACTION_EXEC, out);
+    }, "IActions::Create")) {
+    return false;
+  }
+
+  clean_ptr<IExecAction> exec(nullptr, CoRelease<IExecAction>);
+  if (!clean_ptr_assign(isolate, exec, [&](IExecAction **out) {
+    return action->QueryInterface(IID_IExecAction, (void**)out);
+    }, "IAction::QueryInterface")) {
+    return false;
+  }
+
+  ASSIGN(context, exec, settings, Path, TOBSTRING);
+  ASSIGN(context, exec, settings, Arguments, TOBSTRING);
+  ASSIGN(context, exec, settings, Id, TOBSTRING);
+  ASSIGN(context, exec, settings, WorkingDirectory, TOBSTRING);
+
+  return true;
+}
+
+NAN_METHOD(CreateTask) {
+  Local<Context> context = Nan::GetCurrentContext();
+  Isolate *isolate = context->GetIsolate();
+
+  if (info.Length() != 2) {
+    Nan::ThrowError("Expected 2 parameters (task name, task settings)");
+    return;
+  }
+
+  clean_ptr<ITaskService> sched(getScheduler(isolate),
+    [](ITaskService *ptr) { ptr->Release(); });
+
+  if (sched == nullptr) {
+    return;
+  }
+
+  Local<Object> parameters = info[1]->ToObject(context).ToLocalChecked();
+
+  clean_ptr<ITaskFolder> rootFolder(nullptr, CoRelease<ITaskFolder>);
+  if (!clean_ptr_assign(isolate, rootFolder, [&](ITaskFolder **out) {
+    // TODO: allow tasks in folders
+    return sched->GetFolder(_bstr_t("\\"), out);
+    }, "ITaskService::GetFolder")) {
+    return;
+  }
+
+  clean_ptr<ITaskDefinition> task(nullptr, CoRelease<ITaskDefinition>);
+  if (!clean_ptr_assign(isolate, task, [&](ITaskDefinition **out) {
+    return sched->NewTask(0, out);
+    }, "ITaskScheduler::Nan::NewTask")) {
+    return;
+  }
+
+  clean_ptr<IRegistrationInfo> registrationInfo(nullptr, CoRelease<IRegistrationInfo>);
+  if (!clean_ptr_assign(isolate, registrationInfo, [&](IRegistrationInfo **out) {
+    return task->get_RegistrationInfo(out);
+    }, "ITaskDefinition::get_RegistrationInfo")) {
+    return;
+  }
+
+  Local<Object> registrationInfoConf = getObject(context, parameters, "registrationInfo"_n);
+  if (!registrationInfoConf.IsEmpty()) {
+    ASSIGN(context, registrationInfo, registrationInfoConf, Author, TOBSTRING);
+    ASSIGN(context, registrationInfo, registrationInfoConf, Date, TOBSTRING);
+    ASSIGN(context, registrationInfo, registrationInfoConf, Description, TOBSTRING);
+    ASSIGN(context, registrationInfo, registrationInfoConf, Documentation, TOBSTRING);
+    ASSIGN(context, registrationInfo, registrationInfoConf, Source, TOBSTRING);
+    ASSIGN(context, registrationInfo, registrationInfoConf, URI, TOBSTRING);
+  }
+
+  clean_ptr<ITaskSettings> taskSettings(nullptr, CoRelease<ITaskSettings>);
+  if (!clean_ptr_assign(isolate, taskSettings, [&](ITaskSettings **out) {
+    return task->get_Settings(out);
+    }, "ITaskDefinition::get_Settings")) {
+    return;
+  }
+  
+  Local<Object> taskSettingsConf = getObject(context, parameters, "taskSettings"_n);
+  if (!taskSettingsConf.IsEmpty()) {
+    ASSIGN(context, taskSettings, taskSettingsConf, AllowDemandStart, toBool);
+  }
+
+  v8::Local<Value> actionsVal = parameters->Get(context, "actions"_n).ToLocalChecked();
+  if (!actionsVal->IsNullOrUndefined()) {
+    int idx = 0;
+    Local<Object> actions = actionsVal->ToObject(context).ToLocalChecked();
+    while (true) {
+      v8::Local<Value> action = actions->Get(context, idx++).ToLocalChecked();
+      if (action->IsNullOrUndefined()) {
+        break;
+      }
+      if (!addAction(context, task.get(), action->ToObject(context).ToLocalChecked())) {
+        return;
+      }
+    }
+  }
+
+  // TODO: Add support for triggers
+
+  clean_ptr<IRegisteredTask> registeredTask(nullptr, CoRelease<IRegisteredTask>);
+  if (!clean_ptr_assign(isolate, registeredTask, [&](IRegisteredTask **out) {
+    std::wstring taskName = toWC(info[0]);
+    std::wstring userName = toWC(parameters->Get(context, "user"_n).ToLocalChecked());
+    return rootFolder->RegisterTaskDefinition(_bstr_t(taskName.c_str()), task.get(), TASK_CREATE_OR_UPDATE,
+      _variant_t(userName.c_str()), _variant_t(), TASK_LOGON_NONE, _variant_t(L""), out);
+    }, "ITaskFolder::RegisterTaskDefinition")) {
+  }
+}
+
+NAN_METHOD(GetTasks) {
+  Isolate* isolate = Isolate::GetCurrent();
+  Local<Context> context = Nan::GetCurrentContext();
+
+  static const int TASKS_TO_RETRIEVE = 5;
+
+  if (info.Length() > 1) {
+    Nan::ThrowError("Expected zero or one parameters (if set, the specified folder will be listed instead of the rrot)");
+    return;
+  }
+
+  clean_ptr<ITaskService> sched(getScheduler(isolate), [](ITaskService *ptr) { ptr->Release(); });
+  if (sched == nullptr) {
+    return;
+  }
+
+  clean_ptr<ITaskFolder> rootFolder(nullptr, CoRelease<ITaskFolder>);
+  if (!clean_ptr_assign(isolate, rootFolder, [&](ITaskFolder **out) {
+    std::wstring folder = info.Length() == 0 ? L"\\" : toWC(info[0]);
+    return sched->GetFolder(_bstr_t(folder.c_str()), out);
+    }, "ITaskService::GetFolder")) {
+    return;
+  }
+
+  clean_ptr<IRegisteredTaskCollection> tasks(nullptr, CoRelease<IRegisteredTaskCollection>);
+  if (!clean_ptr_assign(isolate, tasks, [&](IRegisteredTaskCollection **out) {
+    return rootFolder->GetTasks(0, out);
+    }, "ITaskFolder->GetTasks")) {
+    return;
+  }
+
+  LONG count;
+  tasks->get_Count(&count);
+
+  Local<Array> result = Nan::New<Array>();
+  int32_t resultIdx = 0;
+
+  for (LONG i = 0; i < count; ++i) {
+    DWORD numFetched = 0;
+    clean_ptr<IRegisteredTask> task(nullptr, CoRelease<IRegisteredTask>);
+    if (clean_ptr_assign(isolate, task, [&](IRegisteredTask **out) {
+      // 1-based indices? WTF is this madness
+      return tasks->get_Item(_variant_t(i + 1, VT_I4), out);
+      }, "IRegisteredTaskCollection::get_Item", false)) {
+      Local<Object> item = Nan::New<Object>();
+      COMTOV8(context, task, item, Name, CComBSTR);
+      COMTOV8(context, task, item, Enabled, VARIANT_BOOL);
+      COMTOV8(context, task, item, LastTaskResult, LONG);
+
+      result->Set(context, resultIdx++, item);
+    }
+  }
+
+  info.GetReturnValue().Set(result);
+}
+
+NAN_METHOD(DeleteTask) {
+  Isolate* isolate = Isolate::GetCurrent();
+  Local<Context> context = Nan::GetCurrentContext();
+
+  static const int TASKS_TO_RETRIEVE = 5;
+
+  if (info.Length() != 1) {
+    Nan::ThrowError("Expected 1 parameter (the task name)");
+    return;
+  }
+
+  clean_ptr<ITaskService> sched(getScheduler(isolate), [](ITaskService *ptr) { ptr->Release(); });
+
+  if (sched == nullptr) {
+    return;
+  }
+
+  clean_ptr<ITaskFolder> rootFolder(nullptr, CoRelease<ITaskFolder>);
+  if (!clean_ptr_assign(isolate, rootFolder, [&](ITaskFolder **out) {
+    // TODO: allow tasks in folders
+    return sched->GetFolder(_bstr_t("\\"), out);
+    }, "ITaskService::GetFolder")) {
+    return;
+  }
+
+  std::wstring taskName = toWC(info[0]);
+  HRESULT res = rootFolder->DeleteTask(_bstr_t(taskName.c_str()), 0);
+
+  if (FAILED(res)) {
+    isolate->ThrowException(HResultException(res, "ITaskFolder::Delete"));
+    return;
+  }
+}
+
+NAN_METHOD(RunTask) {
+  Isolate* isolate = Isolate::GetCurrent();
+  Local<Context> context = Nan::GetCurrentContext();
+
+  static const int TASKS_TO_RETRIEVE = 5;
+
+  if (info.Length() != 1) {
+    Nan::ThrowError("Expected 1 parameter (the task name)");
+    return;
+  }
+
+  clean_ptr<ITaskService> sched(getScheduler(isolate), [](ITaskService *ptr) { ptr->Release(); });
+  if (sched == nullptr) {
+    return;
+  }
+
+  clean_ptr<ITaskFolder> rootFolder(nullptr, CoRelease<ITaskFolder>);
+  if (!clean_ptr_assign(isolate, rootFolder, [&](ITaskFolder **out) {
+    // TODO: allow tasks in folders
+    return sched->GetFolder(_bstr_t("\\"), out);
+    }, "ITaskService::GetFolder")) {
+    return;
+  }
+
+  std::wstring taskName = toWC(info[0]);
+  clean_ptr<IRegisteredTask> task(nullptr, CoRelease<IRegisteredTask>);
+  if (!clean_ptr_assign(isolate, task, [&](IRegisteredTask **out) {
+    return rootFolder->GetTask(_bstr_t(taskName.c_str()), out);
+    }, "ITaskFolder::GetTask")) {
+    return;
+  }
+
+  clean_ptr<IRunningTask> running(nullptr, CoRelease<IRunningTask>);
+  if (!clean_ptr_assign(isolate, running, [&](IRunningTask **out) {
+    return task->Run(CComVariant(), out);
+    }, "IRegisteredTask::Run")) {
+    return;
+  }
+}
+
 NAN_METHOD(IsThisWine) {
   Isolate* isolate = Isolate::GetCurrent();
 
@@ -1183,57 +1543,73 @@ NAN_METHOD(IsThisWine) {
 }
 
 NAN_MODULE_INIT(Init) {
+  HRESULT hr = ::CoInitialize(nullptr);
+
   Nan::Set(target, "SetFileAttributes"_n,
-    GetFunction(New<FunctionTemplate>(SetFileAttributes)).ToLocalChecked());
+    GetFunction(Nan::New<FunctionTemplate>(SetFileAttributes)).ToLocalChecked());
   Nan::Set(target, "GetDiskFreeSpaceEx"_n,
-    GetFunction(New<FunctionTemplate>(GetDiskFreeSpaceEx)).ToLocalChecked());
+    GetFunction(Nan::New<FunctionTemplate>(GetDiskFreeSpaceEx)).ToLocalChecked());
   Nan::Set(target, "GetVolumePathName"_n,
-    GetFunction(New<FunctionTemplate>(GetVolumePathName)).ToLocalChecked());
+    GetFunction(Nan::New<FunctionTemplate>(GetVolumePathName)).ToLocalChecked());
   Nan::Set(target, "ShellExecuteEx"_n,
-    GetFunction(New<FunctionTemplate>(ShellExecuteEx)).ToLocalChecked());
+    GetFunction(Nan::New<FunctionTemplate>(ShellExecuteEx)).ToLocalChecked());
 
   Nan::Set(target, "GetPrivateProfileSection"_n,
-    GetFunction(New<FunctionTemplate>(GetPrivateProfileSection)).ToLocalChecked());
+    GetFunction(Nan::New<FunctionTemplate>(GetPrivateProfileSection)).ToLocalChecked());
   Nan::Set(target, "GetPrivateProfileSectionNames"_n,
-    GetFunction(New<FunctionTemplate>(GetPrivateProfileSectionNames)).ToLocalChecked());
+    GetFunction(Nan::New<FunctionTemplate>(GetPrivateProfileSectionNames)).ToLocalChecked());
   Nan::Set(target, "GetPrivateProfileString"_n,
-    GetFunction(New<FunctionTemplate>(GetPrivateProfileString)).ToLocalChecked());
+    GetFunction(Nan::New<FunctionTemplate>(GetPrivateProfileString)).ToLocalChecked());
   Nan::Set(target, "WritePrivateProfileString"_n,
-    GetFunction(New<FunctionTemplate>(WritePrivateProfileString)).ToLocalChecked());
+    GetFunction(Nan::New<FunctionTemplate>(WritePrivateProfileString)).ToLocalChecked());
 
   Nan::Set(target, "WithRegOpen"_n,
-    GetFunction(New<FunctionTemplate>(WithRegOpen)).ToLocalChecked());
+    GetFunction(Nan::New<FunctionTemplate>(WithRegOpen)).ToLocalChecked());
   Nan::Set(target, "RegGetValue"_n,
-    GetFunction(New<FunctionTemplate>(RegGetValue)).ToLocalChecked());
+    GetFunction(Nan::New<FunctionTemplate>(RegGetValue)).ToLocalChecked());
   Nan::Set(target, "RegEnumKeys"_n,
-    GetFunction(New<FunctionTemplate>(RegEnumKeys)).ToLocalChecked());
+    GetFunction(Nan::New<FunctionTemplate>(RegEnumKeys)).ToLocalChecked());
   Nan::Set(target, "RegEnumValues"_n,
-    GetFunction(New<FunctionTemplate>(RegEnumValues)).ToLocalChecked());
+    GetFunction(Nan::New<FunctionTemplate>(RegEnumValues)).ToLocalChecked());
 
   Nan::Set(target, "SHGetKnownFolderPath"_n,
-    GetFunction(New<FunctionTemplate>(SHGetKnownFolderPath)).ToLocalChecked());
+    GetFunction(Nan::New<FunctionTemplate>(SHGetKnownFolderPath)).ToLocalChecked());
 
   Nan::Set(target, "GetProcessList"_n,
-    GetFunction(New<FunctionTemplate>(GetProcessList)).ToLocalChecked());
+    GetFunction(Nan::New<FunctionTemplate>(GetProcessList)).ToLocalChecked());
   Nan::Set(target, "GetModuleList"_n,
-    GetFunction(New<FunctionTemplate>(GetModuleList)).ToLocalChecked());
+    GetFunction(Nan::New<FunctionTemplate>(GetModuleList)).ToLocalChecked());
 
   Nan::Set(target, "GetProcessWindowList"_n,
-    GetFunction(New<FunctionTemplate>(GetProcessWindowList)).ToLocalChecked());
+    GetFunction(Nan::New<FunctionTemplate>(GetProcessWindowList)).ToLocalChecked());
   Nan::Set(target, "SetForegroundWindow"_n,
-    GetFunction(New<FunctionTemplate>(SetForegroundWin)).ToLocalChecked());
+    GetFunction(Nan::New<FunctionTemplate>(SetForegroundWin)).ToLocalChecked());
 
   Nan::Set(target, "GetUserPreferredUILanguages"_n,
-    GetFunction(New<FunctionTemplate>(GetUserPreferredUILanguages)).ToLocalChecked());
+    GetFunction(Nan::New<FunctionTemplate>(GetUserPreferredUILanguages)).ToLocalChecked());
   Nan::Set(target, "GetSystemPreferredUILanguages"_n,
-    GetFunction(New<FunctionTemplate>(GetSystemPreferredUILanguages)).ToLocalChecked());
+    GetFunction(Nan::New<FunctionTemplate>(GetSystemPreferredUILanguages)).ToLocalChecked());
   Nan::Set(target, "GetProcessPreferredUILanguages"_n,
-    GetFunction(New<FunctionTemplate>(GetProcessPreferredUILanguages)).ToLocalChecked());
+    GetFunction(Nan::New<FunctionTemplate>(GetProcessPreferredUILanguages)).ToLocalChecked());
   Nan::Set(target, "SetProcessPreferredUILanguages"_n,
-    GetFunction(New<FunctionTemplate>(SetProcessPreferredUILanguages)).ToLocalChecked());
+    GetFunction(Nan::New<FunctionTemplate>(SetProcessPreferredUILanguages)).ToLocalChecked());
+
+  Nan::Set(target, "CreateTask"_n,
+    GetFunction(Nan::New<FunctionTemplate>(CreateTask)).ToLocalChecked());
+  Nan::Set(target, "GetTasks"_n,
+    GetFunction(Nan::New<FunctionTemplate>(GetTasks)).ToLocalChecked());
+  Nan::Set(target, "DeleteTask"_n,
+    GetFunction(Nan::New<FunctionTemplate>(DeleteTask)).ToLocalChecked());
+  Nan::Set(target, "RunTask"_n,
+    GetFunction(Nan::New<FunctionTemplate>(RunTask)).ToLocalChecked());
 
   Nan::Set(target, "IsThisWine"_n,
-    GetFunction(New<FunctionTemplate>(IsThisWine)).ToLocalChecked());
+    GetFunction(Nan::New<FunctionTemplate>(IsThisWine)).ToLocalChecked());
+
+
+  node::AtExit([](void *arg) {
+    ::CoUninitialize();
+    });
 }
 
-NODE_MODULE(winapi, Init)
+NODE_MODULE_CONTEXT_AWARE(winapi, Init)
