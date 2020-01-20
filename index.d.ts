@@ -169,7 +169,7 @@ export function CreateTask(name: string, options: ITaskOptions);
 // Note: this lists only tasks, not subfolders. There is currently no way to get at the list of subfolders
 // Also note: This silently skips any tasks that we can't access (e.g. for security reasons) so this list may
 //   not be the same as what you get from the ui.
-export function GetTask(path?: string): ITaskEntry[];
+export function GetTasks(path?: string): ITaskEntry[];
 
 // delete a task
 export function DeleteTask(name: string);
