@@ -137,6 +137,17 @@ export interface ITaskSettings {
   AllowDemandStart?: boolean;
 }
 
+export type LogonType = 'none' | 'password' | 's4u' | 'interactive_token' | 'group' | 'service_account' | 'interactive_token_or_password';
+
+export interface IPrincipalSettings {
+  DisplayName: string;
+  GroupId: string;
+  Id: string;
+  UserId: string;
+  LogonType: LogonType;
+  RunLevel: 'lua' | 'highest';
+}
+
 export interface ITaskAction {
   Path: string;
   Arguments?: string;
@@ -149,6 +160,7 @@ export interface ITaskOptions {
 
   registrationInfo?: ITaskRegistrationInfo;
   taskSettings: ITaskSettings;
+  principal: IPrincipalSettings;
 
   actions: ITaskAction[];
 }

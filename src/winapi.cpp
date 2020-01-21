@@ -1314,6 +1314,47 @@ bool addAction(Local<Context> context, ITaskDefinition *task, const Local<Object
   return true;
 }
 
+TASK_LOGON_TYPE convLogonType(Local<Context> context, const Local<Value> &input) {
+  static const std::unordered_map<std::string, TASK_LOGON_TYPE> logonTypeMap{
+      { "none", TASK_LOGON_NONE },
+      { "password", TASK_LOGON_PASSWORD },
+      { "s4u", TASK_LOGON_S4U },
+      { "interactive_token", TASK_LOGON_INTERACTIVE_TOKEN },
+      { "group", TASK_LOGON_GROUP },
+      { "service_account", TASK_LOGON_SERVICE_ACCOUNT },
+      { "interactive_token_or_password", TASK_LOGON_INTERACTIVE_TOKEN_OR_PASSWORD },
+  };
+
+  String::Utf8Value inputStr(context->GetIsolate(), input);
+
+  auto iter = logonTypeMap.find(*inputStr);
+  if (iter != logonTypeMap.end()) {
+    return iter->second;
+  }
+  else {
+    return TASK_LOGON_NONE;
+  }
+}
+
+TASK_RUNLEVEL_TYPE convRunLevel(Local<Context> context, const Local<Value> &input) {
+  static const std::unordered_map<std::string, TASK_RUNLEVEL_TYPE> logonTypeMap{
+      { "lua", TASK_RUNLEVEL_LUA },
+      { "highest", TASK_RUNLEVEL_HIGHEST },
+  };
+
+  String::Utf8Value inputStr(context->GetIsolate(), input);
+
+  auto iter = logonTypeMap.find(*inputStr);
+  if (iter != logonTypeMap.end()) {
+    return iter->second;
+  }
+  else {
+    return TASK_RUNLEVEL_LUA;
+  }
+}
+
+
+
 NAN_METHOD(CreateTask) {
   Local<Context> context = Nan::GetCurrentContext();
   Isolate *isolate = context->GetIsolate();
@@ -1347,15 +1388,15 @@ NAN_METHOD(CreateTask) {
     return;
   }
 
-  clean_ptr<IRegistrationInfo> registrationInfo(nullptr, CoRelease<IRegistrationInfo>);
-  if (!clean_ptr_assign(isolate, registrationInfo, [&](IRegistrationInfo **out) {
-    return task->get_RegistrationInfo(out);
-    }, "ITaskDefinition::get_RegistrationInfo")) {
-    return;
-  }
-
   Local<Object> registrationInfoConf = getObject(context, parameters, "registrationInfo"_n);
   if (!registrationInfoConf.IsEmpty()) {
+    clean_ptr<IRegistrationInfo> registrationInfo(nullptr, CoRelease<IRegistrationInfo>);
+    if (!clean_ptr_assign(isolate, registrationInfo, [&](IRegistrationInfo **out) {
+      return task->get_RegistrationInfo(out);
+      }, "ITaskDefinition::get_RegistrationInfo")) {
+      return;
+    }
+
     ASSIGN(context, registrationInfo, registrationInfoConf, Author, TOBSTRING);
     ASSIGN(context, registrationInfo, registrationInfoConf, Date, TOBSTRING);
     ASSIGN(context, registrationInfo, registrationInfoConf, Description, TOBSTRING);
@@ -1364,16 +1405,32 @@ NAN_METHOD(CreateTask) {
     ASSIGN(context, registrationInfo, registrationInfoConf, URI, TOBSTRING);
   }
 
-  clean_ptr<ITaskSettings> taskSettings(nullptr, CoRelease<ITaskSettings>);
-  if (!clean_ptr_assign(isolate, taskSettings, [&](ITaskSettings **out) {
-    return task->get_Settings(out);
-    }, "ITaskDefinition::get_Settings")) {
-    return;
-  }
-  
+
   Local<Object> taskSettingsConf = getObject(context, parameters, "taskSettings"_n);
   if (!taskSettingsConf.IsEmpty()) {
+    clean_ptr<ITaskSettings> taskSettings(nullptr, CoRelease<ITaskSettings>);
+    if (!clean_ptr_assign(isolate, taskSettings, [&](ITaskSettings **out) {
+      return task->get_Settings(out);
+      }, "ITaskDefinition::get_Settings")) {
+      return;
+    }
     ASSIGN(context, taskSettings, taskSettingsConf, AllowDemandStart, toBool);
+  }
+
+  Local<Object> principalConf = getObject(context, parameters, "principal"_n);
+  if (!principalConf.IsEmpty()) {
+    clean_ptr<IPrincipal> principal(nullptr, CoRelease<IPrincipal>);
+    if (!clean_ptr_assign(isolate, principal, [&](IPrincipal **out) {
+      return task->get_Principal(out);
+      }, "ITaskDefinition::get_Principal")) {
+      return;
+    }
+    ASSIGN(context, principal, principalConf, DisplayName, TOBSTRING);
+    ASSIGN(context, principal, principalConf, GroupId, TOBSTRING);
+    ASSIGN(context, principal, principalConf, Id, TOBSTRING);
+    ASSIGN(context, principal, principalConf, UserId, TOBSTRING);
+    ASSIGN(context, principal, principalConf, LogonType, convLogonType);
+    ASSIGN(context, principal, principalConf, RunLevel, convRunLevel);
   }
 
   v8::Local<Value> actionsVal = parameters->Get(context, "actions"_n).ToLocalChecked();
