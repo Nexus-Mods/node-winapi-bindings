@@ -1782,4 +1782,9 @@ NAN_MODULE_INIT(Init) {
     });
 }
 
-NODE_MODULE_CONTEXT_AWARE(winapi, Init)
+#if NODE_MAJOR_VERSION >= 10
+NAN_MODULE_WORKER_ENABLED(winapi, Init)
+#else
+NODE_MODULE(winapi, Init)
+#endif
+
