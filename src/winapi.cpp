@@ -1633,16 +1633,8 @@ NAN_METHOD(DeleteTask) {
   }
 }
 
-NAN_METHOD(RunTask) {
-  Isolate* isolate = Isolate::GetCurrent();
-  Local<Context> context = Nan::GetCurrentContext();
-
-  static const int TASKS_TO_RETRIEVE = 5;
-
-  if (info.Length() != 1) {
-    Nan::ThrowError("Expected 1 parameter (the task name)");
-    return;
-  }
+void withTask(const Local<Context> context, const std::wstring &taskName, std::function<void(IRegisteredTask *)> cb) {
+  Isolate* isolate = context->GetIsolate();
 
   clean_ptr<ITaskService> sched(getScheduler(isolate), [](ITaskService *ptr) { ptr->Release(); });
   if (sched == nullptr) {
@@ -1657,7 +1649,6 @@ NAN_METHOD(RunTask) {
     return;
   }
 
-  std::wstring taskName = toWC(info[0]);
   clean_ptr<IRegisteredTask> task(nullptr, CoRelease<IRegisteredTask>);
   if (!clean_ptr_assign(isolate, task, [&](IRegisteredTask **out) {
     return rootFolder->GetTask(_bstr_t(taskName.c_str()), out);
@@ -1665,12 +1656,47 @@ NAN_METHOD(RunTask) {
     return;
   }
 
-  clean_ptr<IRunningTask> running(nullptr, CoRelease<IRunningTask>);
-  if (!clean_ptr_assign(isolate, running, [&](IRunningTask **out) {
-    return task->Run(CComVariant(), out);
-    }, "IRegisteredTask::Run")) {
+  cb(task.get());
+}
+
+NAN_METHOD(RunTask) {
+  Local<Context> context = Nan::GetCurrentContext();
+  Isolate* isolate = context->GetIsolate();
+
+  if (info.Length() != 1) {
+    Nan::ThrowError("Expected 1 parameter (the task name)");
     return;
   }
+
+  std::wstring taskName = toWC(info[0]);
+  withTask(context, taskName, [isolate](IRegisteredTask *task) {
+    clean_ptr<IRunningTask> running(nullptr, CoRelease<IRunningTask>);
+    if (!clean_ptr_assign(isolate, running, [&](IRunningTask **out) {
+      return task->Run(CComVariant(), out);
+      }, "IRegisteredTask::Run")) {
+      return;
+    }
+    });
+}
+
+NAN_METHOD(StopTask) {
+  Local<Context> context = Nan::GetCurrentContext();
+  Isolate* isolate = context->GetIsolate();
+
+  if (info.Length() != 1) {
+    Nan::ThrowError("Expected 1 parameter (the task name)");
+    return;
+  }
+
+  std::wstring taskName = toWC(info[0]);
+  withTask(context, taskName, [isolate](IRegisteredTask *task) {
+    clean_ptr<IRunningTask> running(nullptr, CoRelease<IRunningTask>);
+    if (!clean_ptr_assign(isolate, running, [&](IRunningTask **out) {
+      return task->Stop(0);
+      }, "IRegisteredTask::Stop")) {
+      return;
+    }
+    });
 }
 
 NAN_METHOD(IsThisWine) {
@@ -1744,6 +1770,8 @@ NAN_MODULE_INIT(Init) {
     GetFunction(Nan::New<FunctionTemplate>(DeleteTask)).ToLocalChecked());
   Nan::Set(target, "RunTask"_n,
     GetFunction(Nan::New<FunctionTemplate>(RunTask)).ToLocalChecked());
+  Nan::Set(target, "StopTask"_n,
+    GetFunction(Nan::New<FunctionTemplate>(StopTask)).ToLocalChecked());
 
   Nan::Set(target, "IsThisWine"_n,
     GetFunction(Nan::New<FunctionTemplate>(IsThisWine)).ToLocalChecked());

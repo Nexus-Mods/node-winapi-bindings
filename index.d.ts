@@ -140,12 +140,12 @@ export interface ITaskSettings {
 export type LogonType = 'none' | 'password' | 's4u' | 'interactive_token' | 'group' | 'service_account' | 'interactive_token_or_password';
 
 export interface IPrincipalSettings {
-  DisplayName: string;
-  GroupId: string;
-  Id: string;
-  UserId: string;
-  LogonType: LogonType;
-  RunLevel: 'lua' | 'highest';
+  DisplayName?: string;
+  GroupId?: string;
+  Id?: string;
+  UserId?: string;
+  LogonType?: LogonType;
+  RunLevel?: 'lua' | 'highest';
 }
 
 export interface ITaskAction {
@@ -160,7 +160,7 @@ export interface ITaskOptions {
 
   registrationInfo?: ITaskRegistrationInfo;
   taskSettings: ITaskSettings;
-  principal: IPrincipalSettings;
+  principal?: IPrincipalSettings;
 
   actions: ITaskAction[];
 }
@@ -188,3 +188,6 @@ export function DeleteTask(name: string);
 
 // run a task
 export function RunTask(name: string);
+
+// stop a task
+export function StopTask(name: string);
