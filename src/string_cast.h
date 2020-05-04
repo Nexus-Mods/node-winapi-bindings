@@ -70,7 +70,7 @@ static std::string toMB(const wchar_t * const &source, CodePage codePage, size_t
       throw std::runtime_error("string conversion failed");
     }
     // fix output string length (i.e. in case of unconvertible characters
-    while (result[outLength - 1] == L'\0') {
+    while ((outLength > 0) && (result[outLength - 1] == L'\0')) {
       result.resize(--outLength);
     }
   }
