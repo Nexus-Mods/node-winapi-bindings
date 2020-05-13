@@ -18,7 +18,8 @@ export function GetVolumePathName(filePath: string): string;
 
 export type ShellExecuteVerb = 'edit' | 'explore' | 'find' | 'open' | 'print' | 'properties' | 'runas';
 export type ShellExecuteShow = 'hide' | 'maximize' | 'minimize' | 'restore' | 'show' | 'showdefault'
-                             | 'showminimized' | 'showminnoactive' | 'showna' | 'shownoactivate' | 'shownormal';
+                             | 'showminimized' | 'showminnoactive' | 'showna' | 'shownoactivate' | 'shownormal'
+                             | 'foreground';
 
 export type ShellExecuteMask = 'noasync' | 'flag_no_ui' | 'unicode' | 'no_console' | 'waitforinputidle';
 

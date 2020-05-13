@@ -232,7 +232,28 @@ uint32_t translateExecuteMask(const std::string &name) {
   return 0;
 }
 
+typedef struct {
+  DWORD pid;
+  HWND hwnd;
+} WINDOWPROCESSINFO;
+
+static BOOL CALLBACK getWindowByProcess(HWND hwnd, LPARAM lParam)
+{
+  WINDOWPROCESSINFO *infoPtr = (WINDOWPROCESSINFO *)lParam;
+  DWORD check = 0;
+  BOOL br = true;
+  GetWindowThreadProcessId(hwnd, &check);
+  if (check == infoPtr->pid) {
+    infoPtr->hwnd = hwnd;
+    return false;
+  }
+  return true;
+}
+
+#include <fstream>
+
 NAN_METHOD(ShellExecuteEx) {
+  static const DWORD SW_FOREGROUND = SW_MAX + 1;
   static const std::unordered_map<std::string, DWORD> showFlagMap{
     {"hide", SW_HIDE},
     {"maximize", SW_MAXIMIZE},
@@ -245,6 +266,7 @@ NAN_METHOD(ShellExecuteEx) {
     {"showna", SW_SHOWNA},
     {"shownoactivate", SW_SHOWNOACTIVATE},
     {"shownormal", SW_SHOWNORMAL},
+    {"foreground", SW_FOREGROUND}
   };
 
   Isolate *isolate = Isolate::GetCurrent();
@@ -313,13 +335,48 @@ NAN_METHOD(ShellExecuteEx) {
       Nan::ThrowRangeError("Invalid show flag");
       return;
     }
-    execInfo.nShow = iter->second;
+    if (iter->second == SW_FOREGROUND) {
+      execInfo.nShow = SW_RESTORE;
+      execInfo.fMask |= SEE_MASK_NOCLOSEPROCESS | SEE_MASK_NOASYNC | SEE_MASK_WAITFORINPUTIDLE;
 
+      // allow _all_ processes to set the foreground window, so that if the ShellExecute is forwarded to
+      // a running application, that application can take put itself to the foreground.
+      // Maybe it would make more sense to limit this to processes that have a window but for all I know, figuring out
+      // which process has a window may be more time consuming than simply doing it for every process
+      HANDLE snap = ::CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+      PROCESSENTRY32W pe32;
+
+      if (snap != INVALID_HANDLE_VALUE) {
+        pe32.dwSize = sizeof(PROCESSENTRY32W);
+        bool more = ::Process32FirstW(snap, &pe32);
+        while (more) {
+          AllowSetForegroundWindow(pe32.th32ProcessID);
+          more = ::Process32NextW(snap, &pe32);
+        }
+        ::CloseHandle(snap);
+      }
+    } else {
+      execInfo.nShow = iter->second;
+    }
 
     if (!::ShellExecuteExW(&execInfo)) {
       std::string fileName = toMB(execInfo.lpFile, CodePage::UTF8, wcslen(execInfo.lpFile));
       isolate->ThrowException(WinApiException(::GetLastError(), "ShellExecuteEx", fileName.c_str()));
       return;
+    }
+
+    if (iter->second == SW_FOREGROUND) {
+      WINDOWPROCESSINFO info;
+      info.pid = GetProcessId(execInfo.hProcess);
+      info.hwnd = 0;
+      // put the process into the foreground _if_ a new process was created
+      AllowSetForegroundWindow(info.pid);
+      EnumWindows(getWindowByProcess, (LPARAM)&info);
+      if (info.hwnd != 0) {
+        SetForegroundWindow(info.hwnd);
+        SetActiveWindow(info.hwnd);
+      }
+      CloseHandle(execInfo.hProcess);
     }
   }
   catch (const std::exception &e) {
