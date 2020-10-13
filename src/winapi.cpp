@@ -829,7 +829,15 @@ NAN_METHOD(RegEnumKeys) {
       DWORD classLen = maxClassLen + 1;
       FILETIME lastWritten;
       res = ::RegEnumKeyExW(key, i, keyBuffer.get(), &keyLen, nullptr, classBuffer.get(), &classLen, &lastWritten);
-      if (res != ERROR_SUCCESS) {
+      if (res == ERROR_NO_MORE_ITEMS) {
+        // https://docs.microsoft.com/en-us/windows/win32/api/winreg/nf-winreg-regenumkeyexw#remarks
+        // Registry must've been manipulated since we called RegQueryInfoKey
+        //  and the total number of subKeys has been reduced. (user uninstalled something ?)
+        // Either way, we don't want to lose any information we've already collected and
+        //  there's no point in continuing past this point so we break out of the for loop.
+        break;
+      }
+      else if (res != ERROR_SUCCESS) {
         isolate->ThrowException(WinApiException(res, "RegEnumKeys"));
         return;
       }
