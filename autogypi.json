@@ -1,6 +1,6 @@
 {
   "dependencies": [
-    "nan"
+    "node-addon-api"
   ],
   "includes": []
 }

@@ -3,7 +3,7 @@ if (process.platform !== 'win32') {
   return;
 }
 
-const winapi = require('./build/Release/winapi');
-//const winapi = require('./build/Debug/winapi')
+// const winapi = require('./build/Release/winapi');
+const winapi = require('./build/Debug/winapi')
 
 module.exports = winapi;

@@ -82,10 +82,13 @@ export type REGISTRY_TYPE = 'REG_BINARY' | 'REG_DWORD' | 'REG_DWORD_BIG_ENDIAN' 
 export function WithRegOpen(hive: REGISTRY_HIVE, path: string, cb: (hkey: Buffer) => void);
 // get a value from the registry using a handle created by WithRegOpen or a hive, and a path and valuename within that hkey.
 export function RegGetValue(hkey: Buffer | REGISTRY_HIVE, path: string, key: string): { type: RegType, value: string | string[] | number | Buffer };
+// set a value in the registry
+export function RegSetKeyValue(key: Buffer | REGISTRY_HIVE, path: string, key: string, value: string | string[] | number | Buffer);
 // get a list of keys within an hkey
 export function RegEnumKeys(hkey: Buffer): Array<{ class: string, key: string, lastWritten: number }>;
 // get a list of value names within an hkey
 export function RegEnumValues(hkey: Buffer): Array<{ type: REGISTRY_TYPE, key: string }>;
+
 
 export type KNOWNFOLDER =
   'AccountPictures' | 'AddNewPrograms' | 'AdminTools' | 'AllAppMods' | 'AppCaptures' | 'AppDataDesktop' | 'AppDataDocuments' |
@@ -124,6 +127,7 @@ export function GetProcessPreferredUILanguages(): string[];
 // set list of process-preferred UI languages (windows seem to pick the first language actually installed, so
 // setting a language that the user doesn't have installed has no effect, no error gets reported)
 export function SetProcessPreferredUILanguages(languages: string[]): void;
+
 
 export interface ITaskRegistrationInfo {
   Author?: string;
@@ -192,3 +196,99 @@ export function RunTask(name: string);
 
 // stop a task
 export function StopTask(name: string);
+
+
+// return whether this process is being run on linux through wine
+export function IsThisWine(): boolean;
+
+export type FileVersionFlag = 'debug' | 'infoInferred' | 'patched' | 'prerelease' | 'privateBuild' | 'specialBuild';
+
+export interface IFileVersionInfo {
+  fileVersion: [number, number, number, number];
+  productVersion: [number, number, number, number];
+  flags: FileVersionFlag[];
+  fileType: 'app' | 'dll' | 'drv' | 'font' | 'lib' | 'vxd';
+}
+
+/**
+ * get version info about a file (has to be a supported file type of course)
+ */
+export function GetFileVersionInfo(filePath: string): IFileVersionInfo;
+
+export interface IElevationToken {
+  isElevated: boolean;
+}
+
+/**
+ * receive process token. Currently we only support the elevation token
+ * @param type determine the type of token to retrieve
+ * @param pid process id of the process to query. if left undefined will retrieve the token for the running process itself
+ */
+export GetProcessToken(type: 'elevation', pid?: number): IElevationToken;
+
+export interface ILocker {
+  appName: string;
+  pid: number;
+}
+
+/**
+ * return a list of processes that have a lock on the specified file
+ */
+export function WhoLocks(filePath: string): ILocker[];
+
+export interface IEntry {
+  // full path to the file
+  filePath: string;
+  // whether this is a directory
+  isDirectory: boolean;
+  // whether this is a reparse point (symbolic link or junction point)
+  isReparsePoint: boolean
+  // size in bytes
+  size: number;
+  // last modification time (as seconds since the unix epoch)
+  mtime: number;
+  // if the terminators option was set, this indicates whether an entry is such a terminator
+  isTerminator?: boolean;
+  // unique id of the file (could have collisions due to the limited range of the number type)
+  id?: number;
+  // stringified file id (should be unique)
+  idStr?: string;
+  // number of (hard-)links to the data
+  linkCount?: number;
+}
+
+export interface IWalkOptions {
+  // add a fake entry to the output list for each directory at the point where its
+  // done. This can be useful to simplify parsing the output (default: false)
+  terminators?: boolean;
+  // add linkCount and id attributes to the output. This makes the walk slower (default: false)
+  details?: boolean;
+  // minimum number of entries per call to the progress callback (except for the last
+  // invocation of course). Higher numbers should increase performance but also memory usage
+  // and responsiveness for all kinds of progress indicators (default: 1024)
+  threshold?: number;
+  // recurse into subdirectories (default: true)
+  recurse?: boolean;
+  // ignore files with the "hidden" attribute (default: true)
+  skipHidden?: boolean;
+  // don't recurse into links (junctions), otherwise we may end in an endless loop (default: true)
+  // Note: Before 2.0.0 the behavior of this flag wasn't what's documented here. This previously
+  //   left out all links from the result, both directories (junctions) and files (symbolic links).
+  //   Now it simply doesn't recurse into junction points but still lists them in the output
+  skipLinks?: boolean;
+  // skip past directories that aren't accessible without producing an error (default: true)
+  skipInaccessible?: boolean;
+}
+
+/**
+ * quickly read a directory (recursively by default)
+ * Rationale: The typical pattern to read a directory recursively on posix and node.js is to readdir, a stat on each result to
+ *   determine directories, then recurse into those.
+ *   This is very inefficient on windows because stat is relatively expensive and the functions used under the hood to implement readdir
+ *   already know whether a file is a directory, that information is just dropped to conform with the posix api.
+ * results are returned by invoking "progress" with a chunk of data, this way you may be able to start processing while the directory read
+ * is still going on. returning false from progress cancels the search, however queued results are still returned so it's likely progress
+ * gets called one more time after an invocation returned false.
+ */
+export function WalkDir(basePath: string, progress: (entries: IEntry[]) => boolean, cb: (err: Error) => void);
+export function WalkDir(basePath: string, progress: (entries: IEntry[]) => boolean, options: IWalkOptions, cb: (err: Error) => void);
