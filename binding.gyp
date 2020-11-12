@@ -1,5 +1,4 @@
 {
-    "default"
     "targets": [
         {
             "target_name": "winapi",
