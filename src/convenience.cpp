@@ -188,6 +188,10 @@ public:
     }
   }
 
+  virtual void OnOK() override {
+    Callback().Call(Receiver().Value(), std::initializer_list<napi_value>{ Env().Null() });
+  }
+
   virtual void OnError(const Napi::Error &e) override {
     Callback().Call(Receiver().Value(), std::initializer_list<napi_value>{
       mErrorCode != 0
