@@ -224,7 +224,7 @@ export interface IElevationToken {
  * @param type determine the type of token to retrieve
  * @param pid process id of the process to query. if left undefined will retrieve the token for the running process itself
  */
-export GetProcessToken(type: 'elevation', pid?: number): IElevationToken;
+export function GetProcessToken(type: 'elevation', pid?: number): IElevationToken;
 
 export interface ILocker {
   appName: string;

@@ -33,18 +33,23 @@
                         "src/convenience.h",
                         "src/winapi.cpp"
                     ],
+                    "libraries": [
+                      "-DelayLoad:node.exe"
+                    ]
                 }]
             ],
             "include_dirs": [
               "<!(node -p \"require('node-addon-api').include_dir\")"
             ],
-            "libraries": [
+            "dependencies": [
+              "<!(node -p \"require('node-addon-api').gyp\")"
             ],
             "cflags!": ["-fno-exceptions"],
             "cflags_cc!": ["-fno-exceptions"],
             "defines": [
                 "UNICODE",
-                "_UNICODE"
+                "_UNICODE",
+                "NAPI_VERSION=<(napi_build_version)"
             ],
             "msvs_settings": {
                 "VCCLCompilerTool": {
