@@ -29,6 +29,8 @@
                         "src/tasks.h",
                         "src/walk.cpp",
                         "src/walk.h",
+                        "src/permissions.cpp",
+                        "src/permissions.h",
                         "src/convenience.cpp",
                         "src/convenience.h",
                         "src/winapi.cpp"

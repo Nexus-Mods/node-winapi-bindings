@@ -9,6 +9,7 @@
 #include "convenience.h"
 #include "registry.h"
 #include "processes.h"
+#include "permissions.h"
 
 #pragma comment(lib, "Version.lib")
 
@@ -25,6 +26,7 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
   INI::Init(env, exports);
   FS::Init(env, exports);
   Convenience::Init(env, exports);
+  Permissions::Init(env, exports);
 
   return exports;
 }
