@@ -342,23 +342,9 @@ Napi::Value ShellExecuteExWrap(const Napi::CallbackInfo &info) {
     if (iter->second == SW_FOREGROUND) {
       execInfo.nShow = SW_RESTORE;
       execInfo.fMask |= SEE_MASK_NOCLOSEPROCESS | SEE_MASK_NOASYNC | SEE_MASK_WAITFORINPUTIDLE;
-
-      // allow _all_ processes to set the foreground window, so that if the ShellExecute is forwarded to
-      // a running application, that application can take put itself to the foreground.
-      // Maybe it would make more sense to limit this to processes that have a window but for all I know, figuring out
-      // which process has a window may be more time consuming than simply doing it for every process
-      HANDLE snap = ::CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
-      PROCESSENTRY32W pe32;
-
-      if (snap != INVALID_HANDLE_VALUE) {
-        pe32.dwSize = sizeof(PROCESSENTRY32W);
-        bool more = ::Process32FirstW(snap, &pe32);
-        while (more) {
-          AllowSetForegroundWindow(pe32.th32ProcessID);
-          more = ::Process32NextW(snap, &pe32);
-        }
-        ::CloseHandle(snap);
-      }
+      // allow any process to set the foreground window, so that if ShellExecuteEx is handled by
+      // an already-running process, that process can force itself to the foreground
+      ::AllowSetForegroundWindow(ASFW_ANY);
     } else {
       execInfo.nShow = iter->second;
     }
@@ -373,11 +359,11 @@ Napi::Value ShellExecuteExWrap(const Napi::CallbackInfo &info) {
       info.pid = GetProcessId(execInfo.hProcess);
       info.hwnd = 0;
       // put the process into the foreground _if_ a new process was created
-      AllowSetForegroundWindow(info.pid);
-      EnumWindows(getWindowByProcess, (LPARAM)&info);
+      ::AllowSetForegroundWindow(info.pid);
+      ::EnumWindows(getWindowByProcess, (LPARAM)&info);
       if (info.hwnd != 0) {
-        SetForegroundWindow(info.hwnd);
-        SetActiveWindow(info.hwnd);
+        ::SetForegroundWindow(info.hwnd);
+        ::SetActiveWindow(info.hwnd);
       }
       ::CloseHandle(execInfo.hProcess);
     }
