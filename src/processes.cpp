@@ -141,7 +141,7 @@ Napi::Value GetProcessListWrap(const Napi::CallbackInfo &info) {
 Napi::Value GetProcessWindowListWrap(const Napi::CallbackInfo &info) {
   try {
     if (info.Length() != 1) {
-      throw std::exception("Expected 1 parameter (the process id)");
+      throw std::exception("Expected 1 parameter (process id)");
     }
 
     DWORD pid = info[0].ToNumber().Uint32Value();
@@ -153,7 +153,7 @@ Napi::Value GetProcessWindowListWrap(const Napi::CallbackInfo &info) {
     while (true) {
       // FindWindowEx, in contrast to EnumWindows, also lists metro-style windows.
       // Unfortunately FindWindowEx is not technically safe since the window list can change asynchronously but
-      // even the windows-published ProcessExplorer uses it this way so - pffft.
+      // even the published-by-microsoft ProcessExplorer uses it this way so - pffft.
       windowIter = FindWindowEx(nullptr, windowIter, nullptr, nullptr);
       if (windowIter == nullptr) {
         break;
