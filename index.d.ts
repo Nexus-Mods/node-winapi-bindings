@@ -292,3 +292,44 @@ export interface IWalkOptions {
  */
 export function WalkDir(basePath: string, progress: (entries: IEntry[]) => boolean, cb: (err: Error) => void);
 export function WalkDir(basePath: string, progress: (entries: IEntry[]) => boolean, options: IWalkOptions, cb: (err: Error) => void);
+
+interface IAccess {}
+
+export type UserGroups = "everyone" | "owner" | "group" | "guest" | "administrator";
+export type Permission = 'r' | 'w' | 'x' | 'rw' | 'rx' | 'wx' | 'rwx';
+
+export type UserSID = string;
+
+type AccessFunc = (sid: UserGroups | UserSID, permissions: Permission) => IAccess;
+
+export const Access: {
+  /**
+   * grant access to the item
+   */
+  Grant: AccessFunc,
+  /**
+   * deny access to the item
+   */
+  Deny: AccessFunc,
+  /**
+   * revoke access to the item. This means it will fully remove the "Grant" ACE containing
+   * the specified permission but it will not add a "Deny" ACE nor will it not remove
+   * any Deny ACEs.
+   * Thus the effective permissions after the revoke may actually still contain the
+   * specified permission (if another ACE allows it) or it may take away further
+   * permissions if the revoked ACE provided more permissions than specified in the revoke
+   */
+  Revoke: AccessFunc
+} = { Grant, Deny, Revoke };
+
+/**
+ * add ACE to a file
+ * @param acc the access to apply for the user
+ * @param filePath path to the file to change permission
+ */
+export function AddFileACE(acc: IAccess, filePath: string): void;
+
+/**
+ * get the SID of the active user
+ */
+export function GetUserSID(): UserSID;

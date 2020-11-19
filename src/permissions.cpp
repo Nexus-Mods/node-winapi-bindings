@@ -111,8 +111,6 @@ class AccessWrap : public Napi::ObjectWrap<AccessWrap> {
 public:
   static void Init(const Napi::Env &env, Napi::Object exports) {
     Napi::Function func = DefineClass(env, "Access", {
-      StaticMethod<&AccessWrap::Grant>("Grant"),
-      StaticMethod<&AccessWrap::Deny>("Deny"),
     });
 
     Napi::Object access = Napi::Object::New(env);
@@ -351,7 +349,7 @@ namespace Permissions {
   void Init(Napi::Env env, Napi::Object exports) {
     AccessWrap::Init(env, exports);
 
-    exports.Set("AddFileACL", Napi::Function::New(env, apply));
+    exports.Set("AddFileACE", Napi::Function::New(env, apply));
     exports.Set("GetUserSID", Napi::Function::New(env, getSid));
   }
 }
