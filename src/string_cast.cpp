@@ -31,7 +31,7 @@ std::wstring toWC(const char * const & source, CodePage codePage, size_t sourceL
     if (outLength == 0) {
       throw std::runtime_error("string conversion failed");
     }
-    while (result[outLength - 1] == L'\0') {
+    while ((outLength > 0) && (result[outLength - 1] == L'\0')) {
       result.resize(--outLength);
     }
   }
