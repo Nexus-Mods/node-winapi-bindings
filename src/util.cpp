@@ -240,7 +240,7 @@ WinApiException::WinApiException(DWORD code, const char *func, const char *path)
   , m_Message(strerror(code))
   , m_Code(code)
   , m_Func(func)
-  , m_Path(path)
+  , m_Path(path != nullptr ? path : "")
 {
 }
 
@@ -262,7 +262,7 @@ HResultException::HResultException(HRESULT code, const char *func, const char *p
   : std::exception()
   , m_Code(code)
   , m_Func(func)
-  , m_Path(path)
+  , m_Path(path != nullptr ? path : "")
 {
   _com_error comErr(code);
   LPCWSTR errMsg = comErr.ErrorMessage();

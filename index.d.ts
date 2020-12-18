@@ -333,3 +333,20 @@ export function AddFileACE(acc: IAccess, filePath: string): void;
  * get the SID of the active user
  */
 export function GetUserSID(): UserSID;
+
+/**
+ * Schedule a system shutdown
+ * @param message The message to display to the user
+ * @param delay the delay (in seconds) before the shutdown actually happens
+ * @param askToClose whether the user will be required to close running applications. If false they will be force-closed, potentially causing data loss
+ * @param reboot whether the system should reboot. If false the system turns off
+ */
+export function InitiateSystemShutdown(message: string, delay: number, askToClose: boolean, reboot: boolean): boolean;
+
+/**
+ * Abort a scheduled system shutdown.
+ * Returns true if a shutdown was canceled, false if there wasn't one
+ */
+export function AbortSystemShutdown(): boolean;
+
+

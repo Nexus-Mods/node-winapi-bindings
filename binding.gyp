@@ -25,6 +25,8 @@
                         "src/ini.h",
                         "src/shell.cpp",
                         "src/shell.h",
+                        "src/system.cpp",
+                        "src/system.h",
                         "src/tasks.cpp",
                         "src/tasks.h",
                         "src/walk.cpp",
