@@ -53,6 +53,7 @@
             "defines": [
                 "UNICODE",
                 "_UNICODE",
+                "NAPI_EXPERIMENTAL",
                 "NAPI_VERSION=<(napi_build_version)"
             ],
             "msvs_settings": {
