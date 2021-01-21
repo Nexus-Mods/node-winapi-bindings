@@ -119,7 +119,7 @@ public:
     access.Set("Revoke", Napi::Function::New(env, AccessWrap::Revoke));
     exports.Set("Access", access);
 
-    constructor().Reset(func);
+    constructor() = Napi::Persistent(func);
   }
 
   static Napi::Value Grant(const Napi::CallbackInfo &info) {
@@ -162,8 +162,8 @@ public:
 private:
 
   static inline Napi::FunctionReference &constructor() {
-    static Napi::FunctionReference sInstance;
-    return sInstance;
+    static Napi::FunctionReference *sInstance = new Napi::FunctionReference();
+    return *sInstance;
   }
 
   Access *m_Value;
