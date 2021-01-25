@@ -21,8 +21,6 @@ public:
 
   UnicodeString();
 
-  explicit UnicodeString(HANDLE fileHandle);
-
   explicit UnicodeString(LPCWSTR string, size_t length = std::string::npos);
 
   /**
@@ -41,24 +39,6 @@ public:
    * @return length of the string in 16-bit words (not including zero termination)
    */
   size_t size() const;
-
-  wchar_t operator[] (size_t pos) { return m_Buffer[pos]; }
-
-  void resize(size_t minSize);
-
-  UnicodeString &appendPath(PUNICODE_STRING path);
-
-  UnicodeString subString(size_t offset, size_t length = std::string::npos) {
-    assert(offset < m_Buffer.size());
-    if (length == std::string::npos) {
-      length = m_Buffer.size() - offset;
-    }
-    return UnicodeString(&m_Buffer[offset], length);
-  }
-
-  void set(LPCWSTR path);
-
-  void setFromHandle(HANDLE fileHandle);
 
 private:
 
