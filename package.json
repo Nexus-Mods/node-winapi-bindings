@@ -1,6 +1,6 @@
 {
   "name": "winapi-bindings",
-  "version": "2.2.2",
+  "version": "2.2.3",
   "description": "Assorted winapi functions.",
   "main": "index.js",
   "scripts": {
@@ -8,7 +8,7 @@
   },
   "author": "Black Tree Gaming Ltd",
   "license": "GPL-3.0",
-  "dependencies": {
+  "devDependencies": {
     "autogypi": "^0.2.2",
     "node-addon-api": "^3.1.0",
     "node-gyp": "^6.0.0"
