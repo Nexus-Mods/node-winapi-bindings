@@ -329,10 +329,89 @@ export const Access: {
  */
 export function AddFileACE(acc: IAccess, filePath: string): void;
 
+
+export type Privilege = 'SeCreateTokenPrivilege'
+                      | 'SeAssignPrimaryTokenPrivilege'
+                      | 'SeLockMemoryPrivilege'
+                      | 'SeIncreaseQuotaPrivilege'
+                      | 'SeMachineAccountPrivilege'
+                      | 'SeTcbPrivilege'
+                      | 'SeSecurityPrivilege'
+                      | 'SeTakeOwnershipPrivilege'
+                      | 'SeLoadDriverPrivilege'
+                      | 'SeSystemProfilePrivilege'
+                      | 'SeSystemtimePrivilege'
+                      | 'SeProfileSingleProcessPrivilege'
+                      | 'SeIncreaseBasePriorityPrivilege'
+                      | 'SeCreatePagefilePrivilege'
+                      | 'SeCreatePermanentPrivilege'
+                      | 'SeBackupPrivilege'
+                      | 'SeRestorePrivilege'
+                      | 'SeShutdownPrivilege'
+                      | 'SeDebugPrivilege'
+                      | 'SeAuditPrivilege'
+                      | 'SeSystemEnvironmentPrivilege'
+                      | 'SeChangeNotifyPrivilege'
+                      | 'SeRemoteShutdownPrivilege'
+                      | 'SeUndockPrivilege'
+                      | 'SeSyncAgentPrivilege'
+                      | 'SeEnableDelegationPrivilege'
+                      | 'SeManageVolumePrivilege'
+                      | 'SeImpersonatePrivilege'
+                      | 'SeCreateGlobalPrivilege'
+                      | 'SeTrustedCredManAccessPrivilege'
+                      | 'SeRelabelPrivilege'
+                      | 'SeIncreaseWorkingSetPrivilege'
+                      | 'SeTimeZonePrivilege'
+                      | 'SeCreateSymbolicLinkPrivilege'
+                      | 'SeDelegateSessionUserImpersonatePrivilege';
+
 /**
  * get the SID of the active user
  */
 export function GetUserSID(): UserSID;
+
+/**
+ * return the sid (string form) for the specified account name
+ * @param name 
+ */
+export function LookupAccountName(name: string);
+
+/**
+ * return the effective privilege list for the logged in user. This includes privileges granted
+ * to the user group
+ */
+export function CheckYourPrivilege();
+
+/**
+ * get list of privileges assigned to the specified user. This is different from CheckYourPrivilege!
+ * this only returns the privileges assigned to the user, not their group plus it's not necessarily
+ * the same as their effective privileges. If you assign a user a new privilege it will not take
+ * effect until the user logged out and logged in again.
+ * 
+ * @param sid user sid as returned by GetUserSID or LookupAccountName
+ * 
+ * @note this has to be run in an elevated process
+ */
+export function GetUserPrivilege(sid: string);
+
+/**
+ * grant a user a privilege
+ * @param sid user sid as returned by GetUserSID or LookupAccountName
+ * @param privilege the privilege to add
+ * 
+ * @note this has to be run in an elevated process
+ */
+export function AddUserPrivilege(sid: string, privilege: Privilege);
+
+/**
+ * take away a privilege
+ * @param sid user sid as returned by GetUserSID or LookupAccountName
+ * @param privilege the privilege to remove
+ * 
+ * @note this has to be run in an elevated process
+ */
+export function RemoveUserPrivilege(sid: string, privilege: Privilege);
 
 /**
  * Schedule a system shutdown

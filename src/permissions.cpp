@@ -6,10 +6,54 @@
 #include <vector>
 #include <functional>
 #include <napi.h>
+#include <ntsecapi.h>
 
 #include "scopeguard.hpp"
 #include "string_cast.h"
 #include "util.h"
+
+WELL_KNOWN_SID_TYPE translateGroup(const std::string& group) {
+  if (group == "everyone") {
+    return WinAuthenticatedUserSid;
+  }
+  else if (group == "owner") {
+    return WinCreatorOwnerSid;
+  }
+  else if (group == "group") {
+    return WinBuiltinUsersSid;
+  }
+  else if (group == "guest") {
+    return WinBuiltinGuestsSid;
+  }
+  else if (group == "administrator") {
+    return WinBuiltinAdministratorsSid;
+  }
+  else {
+    return WinNullSid;
+  }
+}
+
+PSID convertSID(const std::string &input) {
+  PSID result;
+  WELL_KNOWN_SID_TYPE knownSid = translateGroup(input);
+  if (knownSid != WinNullSid) {
+    DWORD sidSize = SECURITY_MAX_SID_SIZE;
+    result = LocalAlloc(LMEM_FIXED, sidSize);
+    if (result == nullptr) {
+      throw std::runtime_error("allocation error");
+    }
+    if (!CreateWellKnownSid(knownSid, nullptr, result, &sidSize)) {
+      throw std::runtime_error(std::string("Failed to create sid from group \"") + input + "\": " + std::to_string(::GetLastError()));
+    }
+  }
+  else {
+    // no known sid, assume it's a stringified sid
+    ConvertStringSidToSid(toWC(input.c_str(), CodePage::UTF8, input.size()).c_str(), &result);
+  }
+
+  return result;
+}
+
 
 class Access {
 public:
@@ -38,26 +82,6 @@ public:
     return &mAccess;
   }
 private:
-  WELL_KNOWN_SID_TYPE translateGroup(const std::string &group) {
-    if (group == "everyone") {
-      return WinAuthenticatedUserSid;
-    }
-    else if (group == "owner") {
-      return WinCreatorOwnerSid;
-    }
-    else if (group == "group") {
-      return WinBuiltinUsersSid;
-    }
-    else if (group == "guest") {
-      return WinBuiltinGuestsSid;
-    }
-    else if (group == "administrator") {
-      return WinBuiltinAdministratorsSid;
-    } else {
-      return WinNullSid;
-    }
-  }
-
   DWORD translatePermission(const std::string &rights) {
     static auto sPermissions = std::vector<std::pair<char, DWORD>>({
         std::make_pair('r', FILE_GENERIC_READ),
@@ -76,21 +100,7 @@ private:
   }
 
   TRUSTEEW makeTrustee(const std::string &group) {
-    DWORD sidSize = SECURITY_MAX_SID_SIZE;
-    // assume it's a known sid
-    WELL_KNOWN_SID_TYPE knownSid = translateGroup(group);
-    if (knownSid != WinNullSid) {
-      mSid = LocalAlloc(LMEM_FIXED, sidSize);
-      if (mSid == nullptr) {
-        throw std::runtime_error("allocation error");
-      }
-      if (!CreateWellKnownSid(knownSid, nullptr, mSid, &sidSize)) {
-        throw std::runtime_error(std::string("Failed to create sid from group \"") + group + "\": " + std::to_string(::GetLastError()));
-      }
-    } else {
-      // no known sid, assume it's a stringified sid
-      ConvertStringSidToSid(toWC(group.c_str(), CodePage::UTF8, group.size()).c_str(), &mSid);
-    }
+    mSid = convertSID(group);
 
     TRUSTEEW res;
     res.MultipleTrusteeOperation = NO_MULTIPLE_TRUSTEE;
@@ -226,7 +236,34 @@ template<typename T> using deleted_unique_ptr = std::unique_ptr<T, std::function
 #define checkedBool(res, name, filePath) { if (!res) { throw WinApiException(::GetLastError(), name, filePath == nullptr ? nullptr : toMB(filePath, CodePage::UTF8, wcslen(filePath)).c_str()); } }
 #define checked(res, name, filePath) { if (res != ERROR_SUCCESS) { throw WinApiException(res, name, filePath == nullptr ? nullptr : toMB(filePath, CodePage::UTF8, wcslen(filePath)).c_str()); } }
 
-deleted_unique_ptr<TOKEN_USER> getCurrentUser() {
+template<typename T>
+class TokenInformation {
+public:
+  TokenInformation(TOKEN_INFORMATION_CLASS tokenClass) {
+    HANDLE token;
+    checkedBool(::OpenProcessToken(::GetCurrentProcess(), TOKEN_READ, &token), "OpenProcessToken", nullptr);
+
+    DWORD required = 0;
+    // pre-flight to get required buffer size
+    ::GetTokenInformation(token, tokenClass, (void*)m_Value, 0, &required);
+    m_Value = (T*)::HeapAlloc(::GetProcessHeap(), HEAP_ZERO_MEMORY, required);
+
+    checkedBool(::GetTokenInformation(token, tokenClass, (void*)m_Value, required, &required), "GetTokenInformation", nullptr);
+  }
+
+  ~TokenInformation() {
+    ::HeapFree(GetProcessHeap(), 0, (void*)m_Value);
+  }
+
+  T *operator->() {
+    return m_Value;
+  }
+private:
+  T* m_Value = nullptr;
+};
+
+TokenInformation<TOKEN_USER> getCurrentUser() {
+  /*
   HANDLE token;
   checkedBool(OpenProcessToken(GetCurrentProcess(), TOKEN_READ, &token), "OpenProcessToken", nullptr);
 
@@ -239,10 +276,13 @@ deleted_unique_ptr<TOKEN_USER> getCurrentUser() {
     });
 
   checkedBool(GetTokenInformation(token, TokenUser, (void*)res.get(), required, &required), "GetTokenInformation", nullptr);
-  LPWSTR stringSid = nullptr;
-  checkedBool(ConvertSidToStringSid(res->User.Sid, &stringSid), "ConvertSidToStringSid", nullptr);
+  */
+  TokenInformation<TOKEN_USER> info(TokenUser);
 
-  return res;
+  LPWSTR stringSid = nullptr;
+  checkedBool(ConvertSidToStringSid(info->User.Sid, &stringSid), "ConvertSidToStringSid", nullptr);
+
+  return info;
 }
 
 void setOwner(std::wstring path, PSID owner) {
@@ -345,12 +385,180 @@ Napi::Value getSid(const Napi::CallbackInfo &info) {
   }
 }
 
+LSA_HANDLE GetLocalPolicyHandle(ACCESS_MASK access)
+{
+  LSA_OBJECT_ATTRIBUTES ObjectAttributes;
+
+  ::ZeroMemory(&ObjectAttributes, sizeof(ObjectAttributes));
+
+  LSA_HANDLE handle;
+  NTSTATUS res = LsaOpenPolicy(
+    nullptr,
+    &ObjectAttributes,
+    access,
+    &handle
+  );
+
+  if (res != 0) {
+    throw WinApiException(::LsaNtStatusToWinError(res), "LsaOpenPolicy");
+  }
+  return handle;
+}
+
+Napi::Value checkYourPrivilege(const Napi::CallbackInfo &info) {
+  try {
+    if (info.Length() != 0) {
+      throw std::runtime_error("Expected no parameters");
+    }
+
+    TokenInformation<TOKEN_PRIVILEGES> priv(TokenPrivileges);
+
+    // this should be more than enough
+    DWORD bufSize = 255;
+    std::unique_ptr<wchar_t[]> buffer(new wchar_t[bufSize]);
+
+    Napi::Array result = Napi::Array::New(info.Env());
+
+    for (int i = 0; i < priv->PrivilegeCount; ++i) {
+      DWORD required = bufSize;
+      LookupPrivilegeNameW(nullptr, &priv->Privileges[i].Luid, buffer.get(), &required);
+
+      result.Set(i, Napi::String::From(info.Env(), toMB(buffer.get(), CodePage::UTF8, required)));
+    }
+
+    return result;
+  }
+  catch (const std::exception& e) {
+    return Rethrow(info.Env(), e);
+  }
+}
+
+Napi::Value getUserPrivilege(const Napi::CallbackInfo& info) {
+  if (info.Length() != 1) {
+    throw std::runtime_error("Expected two parameters (sid)");
+  }
+
+  try {
+    PSID sid = convertSID(info[0].ToString());
+
+    PLSA_UNICODE_STRING rights;
+    ULONG count;
+
+    LSA_HANDLE policy = GetLocalPolicyHandle(POLICY_VIEW_LOCAL_INFORMATION | POLICY_LOOKUP_NAMES);
+
+    ScopeGuard onExitPolicy([&]() {
+      ::LsaClose(policy);
+    });
+
+    NTSTATUS res = ::LsaEnumerateAccountRights(policy, sid, &rights, &count);
+    if (res != 0) {
+      throw WinApiException(::LsaNtStatusToWinError(res), "LsaEnumerateAccountRight");
+    }
+
+    ScopeGuard onExitRights([&]() {
+      ::LsaFreeMemory(rights);
+    });
+
+    Napi::Array result = Napi::Array::New(info.Env());
+
+    for (int i = 0; i < count; ++i) {
+      result.Set(i, Napi::String::From(info.Env(), toMB(rights[i].Buffer, CodePage::UTF8, rights[i].Length / sizeof(wchar_t))));
+    }
+
+    return result;
+  }
+  catch (const std::exception& e) {
+    return Rethrow(info.Env(), e);
+  }
+}
+
+Napi::Value addUserPrivilege(const Napi::CallbackInfo & info) {
+  if (info.Length() != 2) {
+    throw std::runtime_error("Expected two parameters (sid, privilege)");
+  }
+
+  PSID sid = convertSID(info[0].ToString());
+
+  LSA_HANDLE policy = GetLocalPolicyHandle(POLICY_VIEW_LOCAL_INFORMATION | POLICY_LOOKUP_NAMES);
+
+  ScopeGuard onExitPolicy([&]() {
+    ::LsaClose(policy);
+  });
+
+  std::wstring rightU16 = toWC(info[1]);
+  LSA_UNICODE_STRING right;
+  right.Buffer = &rightU16[0];
+  right.Length = right.MaximumLength = rightU16.size() * sizeof(wchar_t);
+
+  NTSTATUS res = ::LsaAddAccountRights(policy, sid, &right, 1);
+
+  return info.Env().Undefined();
+}
+
+Napi::Value removeUserPrivilege(const Napi::CallbackInfo & info) {
+  if (info.Length() != 2) {
+    throw std::runtime_error("Expected two parameters (sid, privilege)");
+  }
+
+  PSID sid = convertSID(info[0].ToString());
+
+  LSA_HANDLE policy = GetLocalPolicyHandle(POLICY_VIEW_LOCAL_INFORMATION | POLICY_LOOKUP_NAMES);
+
+  ScopeGuard onExitPolicy([&]() {
+    ::LsaClose(policy);
+  });
+
+  std::wstring rightU16 = toWC(info[1]);
+  LSA_UNICODE_STRING right;
+  right.Buffer = &rightU16[0];
+  right.Length = right.MaximumLength = rightU16.size() * sizeof(wchar_t);
+
+  NTSTATUS res = ::LsaRemoveAccountRights(policy, sid, false, &right, 1);
+
+  return info.Env().Undefined();
+}
+
+Napi::Value lookupAccountName(const Napi::CallbackInfo& info) {
+  if (info.Length() != 1) {
+    throw std::runtime_error("Expected two parameters (account)");
+  }
+
+  try {
+    std::wstring account = toWC(info[0]);
+
+    SID sid;
+    DWORD sidSize = sizeof(SID);
+    SID_NAME_USE nameUse;
+    DWORD domainSize = 0;
+
+    ::LookupAccountNameW(nullptr, account.c_str(), &sid, &sidSize, nullptr, &domainSize, &nameUse),
+      "LookupAccountName", account.c_str();
+
+    std::unique_ptr<wchar_t> rd(new wchar_t[domainSize]);
+
+    checkedBool(::LookupAccountNameW(nullptr, account.c_str(), &sid, &sidSize, rd.get(), &domainSize, &nameUse),
+      "LookupAccountName", account.c_str());
+
+    LPWSTR stringSid = nullptr;
+    checkedBool(ConvertSidToStringSid(&sid, &stringSid), "ConvertSidToStringSid", nullptr);
+
+    return Napi::String::New(info.Env(), toMB(stringSid, CodePage::UTF8, wcslen(stringSid)));
+  } catch (const std::exception& e) {
+      return Rethrow(info.Env(), e);
+    }
+  }
+
 namespace Permissions {
   void Init(Napi::Env env, Napi::Object exports) {
     AccessWrap::Init(env, exports);
 
     exports.Set("AddFileACE", Napi::Function::New(env, apply));
     exports.Set("GetUserSID", Napi::Function::New(env, getSid));
+    exports.Set("LookupAccountName", Napi::Function::New(env, lookupAccountName));
+    exports.Set("CheckYourPrivilege", Napi::Function::New(env, checkYourPrivilege));
+    exports.Set("GetUserPrivilege", Napi::Function::New(env, getUserPrivilege));
+    exports.Set("AddUserPrivilege", Napi::Function::New(env, addUserPrivilege));
+    exports.Set("RemoveUserPrivilege", Napi::Function::New(env, removeUserPrivilege));
   }
 }
 
