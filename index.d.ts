@@ -381,7 +381,7 @@ export function LookupAccountName(name: string);
  * return the effective privilege list for the logged in user. This includes privileges granted
  * to the user group
  */
-export function CheckYourPrivilege();
+export function CheckYourPrivilege(): Privilege[];
 
 /**
  * get list of privileges assigned to the specified user. This is different from CheckYourPrivilege!
@@ -393,7 +393,7 @@ export function CheckYourPrivilege();
  * 
  * @note this has to be run in an elevated process
  */
-export function GetUserPrivilege(sid: string);
+export function GetUserPrivilege(sid: string): Privilege[];
 
 /**
  * grant a user a privilege

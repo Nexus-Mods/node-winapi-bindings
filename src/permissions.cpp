@@ -451,7 +451,12 @@ Napi::Value getUserPrivilege(const Napi::CallbackInfo& info) {
     });
 
     NTSTATUS res = ::LsaEnumerateAccountRights(policy, sid, &rights, &count);
-    if (res != 0) {
+
+    if (res == ERROR_FILE_NOT_FOUND) {
+      // file not found means the account has no individually assigned rights, I find it very weird reporting
+      // an error for that
+      return Napi::Array::New(info.Env());
+    } else if (res != ERROR_SUCCESS) {
       throw WinApiException(::LsaNtStatusToWinError(res), "LsaEnumerateAccountRight");
     }
 
@@ -477,22 +482,32 @@ Napi::Value addUserPrivilege(const Napi::CallbackInfo & info) {
     throw std::runtime_error("Expected two parameters (sid, privilege)");
   }
 
-  PSID sid = convertSID(info[0].ToString());
+  try {
+    PSID sid = convertSID(info[0].ToString());
 
-  LSA_HANDLE policy = GetLocalPolicyHandle(POLICY_VIEW_LOCAL_INFORMATION | POLICY_LOOKUP_NAMES);
+    LSA_HANDLE policy = ::GetLocalPolicyHandle(POLICY_VIEW_LOCAL_INFORMATION | POLICY_LOOKUP_NAMES | POLICY_WRITE);
 
-  ScopeGuard onExitPolicy([&]() {
-    ::LsaClose(policy);
-  });
+    ScopeGuard onExitPolicy([&]() {
+      ::LsaClose(policy);
+    });
 
-  std::wstring rightU16 = toWC(info[1]);
-  LSA_UNICODE_STRING right;
-  right.Buffer = &rightU16[0];
-  right.Length = right.MaximumLength = rightU16.size() * sizeof(wchar_t);
+    std::wstring rightU16 = toWC(info[1]);
+    LSA_UNICODE_STRING right;
+    right.Buffer = &rightU16[0];
+    right.Length = right.MaximumLength = rightU16.size() * sizeof(wchar_t);
 
-  NTSTATUS res = ::LsaAddAccountRights(policy, sid, &right, 1);
+    NTSTATUS res = ::LsaAddAccountRights(policy, sid, &right, 1);
 
-  return info.Env().Undefined();
+    if (res != ERROR_SUCCESS) {
+
+      throw WinApiException(::LsaNtStatusToWinError(res), "LsaEnumerateAccountRight");
+    }
+
+    return info.Env().Undefined();
+  }
+  catch (const std::exception& e) {
+    return Rethrow(info.Env(), e);
+  }
 }
 
 Napi::Value removeUserPrivilege(const Napi::CallbackInfo & info) {
@@ -500,22 +515,31 @@ Napi::Value removeUserPrivilege(const Napi::CallbackInfo & info) {
     throw std::runtime_error("Expected two parameters (sid, privilege)");
   }
 
-  PSID sid = convertSID(info[0].ToString());
+  try {
+    PSID sid = convertSID(info[0].ToString());
 
-  LSA_HANDLE policy = GetLocalPolicyHandle(POLICY_VIEW_LOCAL_INFORMATION | POLICY_LOOKUP_NAMES);
+    LSA_HANDLE policy = GetLocalPolicyHandle(POLICY_VIEW_LOCAL_INFORMATION | POLICY_LOOKUP_NAMES | POLICY_WRITE);
 
-  ScopeGuard onExitPolicy([&]() {
-    ::LsaClose(policy);
-  });
+    ScopeGuard onExitPolicy([&]() {
+      ::LsaClose(policy);
+    });
 
-  std::wstring rightU16 = toWC(info[1]);
-  LSA_UNICODE_STRING right;
-  right.Buffer = &rightU16[0];
-  right.Length = right.MaximumLength = rightU16.size() * sizeof(wchar_t);
+    std::wstring rightU16 = toWC(info[1]);
+    LSA_UNICODE_STRING right;
+    right.Buffer = &rightU16[0];
+    right.Length = right.MaximumLength = rightU16.size() * sizeof(wchar_t);
 
-  NTSTATUS res = ::LsaRemoveAccountRights(policy, sid, false, &right, 1);
+    NTSTATUS res = ::LsaRemoveAccountRights(policy, sid, false, &right, 1);
 
-  return info.Env().Undefined();
+    if (res != ERROR_SUCCESS) {
+      throw WinApiException(::LsaNtStatusToWinError(res), "LsaEnumerateAccountRight");
+    }
+
+    return info.Env().Undefined();
+  }
+  catch (const std::exception& e) {
+    return Rethrow(info.Env(), e);
+  }
 }
 
 Napi::Value lookupAccountName(const Napi::CallbackInfo& info) {
