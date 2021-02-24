@@ -402,7 +402,7 @@ export function GetUserPrivilege(sid: string): Privilege[];
  * 
  * @note this has to be run in an elevated process
  */
-export function AddUserPrivilege(sid: string, privilege: Privilege);
+export function AddUserPrivilege(sid: string, privilege: Privilege): void;
 
 /**
  * take away a privilege
@@ -411,7 +411,7 @@ export function AddUserPrivilege(sid: string, privilege: Privilege);
  * 
  * @note this has to be run in an elevated process
  */
-export function RemoveUserPrivilege(sid: string, privilege: Privilege);
+export function RemoveUserPrivilege(sid: string, privilege: Privilege): void;
 
 /**
  * Schedule a system shutdown
