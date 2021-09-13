@@ -434,11 +434,11 @@ Napi::Value checkYourPrivilege(const Napi::CallbackInfo &info) {
 }
 
 Napi::Value getUserPrivilege(const Napi::CallbackInfo& info) {
-  if (info.Length() != 1) {
-    throw std::runtime_error("Expected two parameters (sid)");
-  }
-
   try {
+    if (info.Length() != 1) {
+      throw std::runtime_error("Expected one parameter (sid)");
+    }
+
     PSID sid = convertSID(info[0].ToString());
 
     PLSA_UNICODE_STRING rights;
@@ -478,11 +478,11 @@ Napi::Value getUserPrivilege(const Napi::CallbackInfo& info) {
 }
 
 Napi::Value addUserPrivilege(const Napi::CallbackInfo & info) {
-  if (info.Length() != 2) {
-    throw std::runtime_error("Expected two parameters (sid, privilege)");
-  }
-
   try {
+    if (info.Length() != 2) {
+      throw std::runtime_error("Expected two parameters (sid, privilege)");
+    }
+
     PSID sid = convertSID(info[0].ToString());
 
     LSA_HANDLE policy = ::GetLocalPolicyHandle(POLICY_VIEW_LOCAL_INFORMATION | POLICY_LOOKUP_NAMES | POLICY_WRITE);
@@ -499,7 +499,6 @@ Napi::Value addUserPrivilege(const Napi::CallbackInfo & info) {
     NTSTATUS res = ::LsaAddAccountRights(policy, sid, &right, 1);
 
     if (res != ERROR_SUCCESS) {
-
       throw WinApiException(::LsaNtStatusToWinError(res), "LsaEnumerateAccountRight");
     }
 
@@ -511,11 +510,11 @@ Napi::Value addUserPrivilege(const Napi::CallbackInfo & info) {
 }
 
 Napi::Value removeUserPrivilege(const Napi::CallbackInfo & info) {
-  if (info.Length() != 2) {
-    throw std::runtime_error("Expected two parameters (sid, privilege)");
-  }
-
   try {
+    if (info.Length() != 2) {
+      throw std::runtime_error("Expected two parameters (sid, privilege)");
+    }
+
     PSID sid = convertSID(info[0].ToString());
 
     LSA_HANDLE policy = GetLocalPolicyHandle(POLICY_VIEW_LOCAL_INFORMATION | POLICY_LOOKUP_NAMES | POLICY_WRITE);
@@ -543,11 +542,11 @@ Napi::Value removeUserPrivilege(const Napi::CallbackInfo & info) {
 }
 
 Napi::Value lookupAccountName(const Napi::CallbackInfo& info) {
-  if (info.Length() != 1) {
-    throw std::runtime_error("Expected two parameters (account)");
-  }
-
   try {
+    if (info.Length() != 1) {
+      throw std::runtime_error("Expected two parameters (account)");
+    }
+
     std::wstring account = toWC(info[0]);
 
     SID sid;
