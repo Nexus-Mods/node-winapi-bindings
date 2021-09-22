@@ -1,6 +1,6 @@
 {
   "name": "winapi-bindings",
-  "version": "2.3.3",
+  "version": "2.3.4",
   "description": "Assorted winapi functions.",
   "main": "index.js",
   "scripts": {

@@ -126,17 +126,17 @@ Napi::Value RegSetKeyValueWrap(const Napi::CallbackInfo &info) {
     switch (type) {
       case REG_SZ: {
         std::wstring data = toWC(info[3]);
-        res = ::RegSetKeyValueW(key, path.c_str(), name.c_str(), type, data.c_str(), 0);
+        res = ::RegSetKeyValueW(key, path.c_str(), name.c_str(), type, data.c_str(), wcslen(data.c_str()) * sizeof(wchar_t));
       } break;
       case REG_DWORD: {
         uint32_t data = info[3].ToNumber().Uint32Value();
-        res = ::RegSetKeyValueW(key, path.c_str(), name.c_str(), type, &data, 0);
+        res = ::RegSetKeyValueW(key, path.c_str(), name.c_str(), type, &data, sizeof(DWORD));
       } break;
       case REG_BINARY: {
         Napi::Buffer<uint8_t> arr = info[3].As<Napi::Buffer<uint8_t>>();
         std::unique_ptr<uint8_t> buffer(new uint8_t[arr.Length()]);
         memcpy(buffer.get(), arr.Data(), arr.Length());
-        res = ::RegSetKeyValueW(key, path.c_str(), name.c_str(), type, buffer.get(), 0);
+        res = ::RegSetKeyValueW(key, path.c_str(), name.c_str(), type, buffer.get(), arr.Length());
       } break;
     }
 
