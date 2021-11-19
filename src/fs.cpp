@@ -2,6 +2,7 @@
 #include "util.h"
 #include <windows.h>
 #include <unordered_map>
+#include <cwchar>
 
 
 DWORD mapAttributes(const Napi::Array &input) {
@@ -113,6 +114,15 @@ const char *fileType(DWORD type) {
  return "unknown";
 }
 
+template <typename ...Args>
+std::wstring mysprintf(const wchar_t *format, Args && ...args)
+{
+    auto size = std::swprintf(nullptr, 0, format, std::forward<Args>(args)...);
+    std::wstring output(size + 1, '\0');
+    std::swprintf(&output[0], format, std::forward<Args>(args)...);
+    return output;
+}
+
 Napi::Value GetFileVersionInfoWrap(const Napi::CallbackInfo &info) {
   try {
     if (info.Length() != 1) {
@@ -122,13 +132,13 @@ Napi::Value GetFileVersionInfoWrap(const Napi::CallbackInfo &info) {
     std::wstring executablePath = toWC(info[0]);
 
     DWORD handle;
-    DWORD info_len = ::GetFileVersionInfoSizeW(executablePath.c_str(), &handle);
+    DWORD info_len = ::GetFileVersionInfoSizeExW(FILE_VER_GET_NEUTRAL | FILE_VER_GET_LOCALISED, executablePath.c_str(), &handle);
     if (info_len == 0) {
       throw WinApiException(::GetLastError(), "GetFileVersionInfoSize", info[0].ToString().Utf8Value().c_str());
     }
 
     std::vector<char> buff(info_len);
-    if (!::GetFileVersionInfoW(executablePath.c_str(), handle, info_len, buff.data())) {
+    if (!::GetFileVersionInfoExW(FILE_VER_GET_NEUTRAL | FILE_VER_GET_LOCALISED, executablePath.c_str(), handle, info_len, buff.data())) {
       throw WinApiException(::GetLastError(), "GetFileVersionInfo", info[0].ToString().Utf8Value().c_str());
     }
 
@@ -139,7 +149,7 @@ Napi::Value GetFileVersionInfoWrap(const Napi::CallbackInfo &info) {
     }
 
     Napi::Object res = Napi::Object::New(info.Env());
-    {
+    { // language neutral file version
       Napi::Array version = Napi::Array::New(info.Env());
       version.Set(0U, Napi::Number::New(info.Env(), HIWORD(fileInfo->dwFileVersionMS)));
       version.Set(1U, Napi::Number::New(info.Env(), LOWORD(fileInfo->dwFileVersionMS)));
@@ -147,7 +157,8 @@ Napi::Value GetFileVersionInfoWrap(const Napi::CallbackInfo &info) {
       version.Set(3u, Napi::Number::New(info.Env(), LOWORD(fileInfo->dwFileVersionLS)));
       res.Set("fileVersion", version);
     }
-    {
+
+    { // language neutral product version
       Napi::Array version = Napi::Array::New(info.Env());
       version.Set(0U, Napi::Number::New(info.Env(), HIWORD(fileInfo->dwProductVersionMS)));
       version.Set(1U, Napi::Number::New(info.Env(), LOWORD(fileInfo->dwProductVersionMS)));
@@ -155,6 +166,49 @@ Napi::Value GetFileVersionInfoWrap(const Napi::CallbackInfo &info) {
       version.Set(3u, Napi::Number::New(info.Env(), LOWORD(fileInfo->dwProductVersionLS)));
       res.Set("productVersion", version);
     }
+
+    PDWORD lang;
+    UINT dummy;
+    if (!::VerQueryValueW(buff.data(), L"\\VarFileInfo\\Translation", reinterpret_cast<LPVOID*>(&lang), &dummy)) {
+      throw WinApiException(::GetLastError(), "VerQueryValue", info[0].ToString().Utf8Value().c_str());
+    }
+
+    static const UINT BUFFER_SIZE = 255;
+    wchar_t versionBuff[BUFFER_SIZE];
+    wchar_t *versionString = versionBuff;
+
+    { // localized file version
+      UINT len = BUFFER_SIZE;
+      memset(versionBuff, '\0', BUFFER_SIZE);
+
+      std::wstring path = mysprintf(L"\\StringFileInfo\\%04x%04x\\FileVersion", LOWORD(*lang), HIWORD(*lang));
+      if (!::VerQueryValueW(buff.data(), path.c_str(), reinterpret_cast<LPVOID *>(&versionString), &len))
+      {
+        std::swprintf(versionString, L"%d.%d.%d.%d",
+          HIWORD(fileInfo->dwFileVersionMS),
+          LOWORD(fileInfo->dwFileVersionMS),
+          HIWORD(fileInfo->dwFileVersionLS),
+          LOWORD(fileInfo->dwFileVersionLS));
+      }
+      res.Set("fileVersionString", toNapi(info.Env(), versionString));
+    }
+
+    { // localized product version
+      UINT len = BUFFER_SIZE;
+      memset(versionBuff, '\0', BUFFER_SIZE);
+
+      std::wstring path = mysprintf(L"\\StringFileInfo\\%04x%04x\\ProductVersion", LOWORD(*lang), HIWORD(*lang));
+      if (!::VerQueryValueW(buff.data(), path.c_str(), reinterpret_cast<LPVOID *>(&versionString), &len))
+      {
+        std::swprintf(versionString, L"%d.%d.%d.%d",
+          HIWORD(fileInfo->dwProductVersionMS),
+          LOWORD(fileInfo->dwProductVersionMS),
+          HIWORD(fileInfo->dwProductVersionLS),
+          LOWORD(fileInfo->dwProductVersionLS));
+      }
+      res.Set("productVersionString", toNapi(info.Env(), versionString));
+    }
+
     {
       DWORD fileFlags = fileInfo->dwFileFlags & fileInfo->dwFileFlagsMask;
       Napi::Object flags = Napi::Object::New(info.Env());
