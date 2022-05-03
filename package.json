@@ -9,7 +9,8 @@
   },
   "scripts": {
     "prebuild": "prebuild.cmd -r napi -t 4 -a x64 --prepack codesign",
-    "install": "prebuild-install || node-gyp rebuild"
+    "preinstall": "autogypi",
+    "install": "prebuild-install -r napi -t 4 -a x64 || node-gyp rebuild"
   },
   "binary": {
     "napi_versions": [4]
