@@ -1,6 +1,6 @@
 {
   "name": "winapi-bindings",
-  "version": "2.4.3",
+  "version": "2.4.4",
   "description": "Assorted winapi functions.",
   "main": "index.js",
   "repository": {
@@ -8,11 +8,11 @@
     "url": "https://github.com/Nexus-Mods/node-winapi-bindings.git"
   },
   "scripts": {
-    "prebuild": "prebuild.cmd -r electron -t 16.2.4 -t 18.2.0 -a x64 --prepack codesign",
+    "prebuild": "prebuild.cmd -r napi -t 4 -a x64 --prepack codesign",
     "install": "prebuild-install || node-gyp rebuild"
   },
   "binary": {
-    "napi_versions": [3]
+    "napi_versions": [4]
   },
   "author": "Black Tree Gaming Ltd",
   "license": "GPL-3.0",
