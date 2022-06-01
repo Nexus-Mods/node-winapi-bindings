@@ -233,9 +233,6 @@ std::string sidToString(PSID sid) {
 
 template<typename T> using deleted_unique_ptr = std::unique_ptr<T, std::function<void(T*)>>;
 
-#define checkedBool(res, name, filePath) { if (!res) { throw WinApiException(::GetLastError(), name, filePath == nullptr ? nullptr : toMB(filePath, CodePage::UTF8, wcslen(filePath)).c_str()); } }
-#define checked(res, name, filePath) { if (res != ERROR_SUCCESS) { throw WinApiException(res, name, filePath == nullptr ? nullptr : toMB(filePath, CodePage::UTF8, wcslen(filePath)).c_str()); } }
-
 template<typename T>
 class TokenInformation {
 public:

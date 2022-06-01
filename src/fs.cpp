@@ -4,6 +4,40 @@
 #include <unordered_map>
 #include <cwchar>
 
+DWORD mapPermissions(const Napi::Array& input) {
+  static const std::unordered_map<std::string, DWORD> permissionsMap{
+    { "read_data", FILE_READ_DATA },
+    { "list_directory", FILE_LIST_DIRECTORY },
+    { "write_data", FILE_WRITE_DATA },
+    { "add_file", FILE_ADD_FILE },
+    { "append_data", FILE_APPEND_DATA },
+    { "add_subdirectory", FILE_ADD_SUBDIRECTORY },
+    { "create_pipe_instance", FILE_CREATE_PIPE_INSTANCE },
+    { "read_ea", FILE_READ_EA },
+    { "write_ea", FILE_WRITE_EA },
+    { "execute", FILE_EXECUTE },
+    { "traverse", FILE_TRAVERSE },
+    { "delete_child", FILE_DELETE_CHILD },
+    { "read_attributes", FILE_READ_ATTRIBUTES },
+    { "write_attributes", FILE_WRITE_ATTRIBUTES },
+    { "all_access", FILE_ALL_ACCESS },
+    { "generic_read", FILE_GENERIC_READ },
+    { "generic_write", FILE_GENERIC_WRITE },
+    { "generic_execute", FILE_GENERIC_EXECUTE },
+  };
+
+  DWORD res = 0;
+  for (uint32_t i = 0; i < input.Length(); ++i) {
+    Napi::String attr = input.Get(i).ToString();
+
+    auto permissions = permissionsMap.find(attr.Utf8Value());
+    if (permissions != permissionsMap.end()) {
+      res |= permissions->second;
+    }
+  }
+
+  return res;
+}
 
 DWORD mapAttributes(const Napi::Array &input) {
   static const std::unordered_map<std::string, DWORD> attributeMap{

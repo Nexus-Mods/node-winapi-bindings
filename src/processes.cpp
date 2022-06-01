@@ -1,8 +1,14 @@
 #include "processes.h"
 #include "util.h"
 #include "scopeguard.hpp"
+#include "fs.h"
 #include <windows.h>
 #include <tlhelp32.h>
+#include <UserEnv.h>
+#include <AclAPI.h>
+#include <future>
+
+#pragma comment(lib, "UserEnv.lib")
 
 typedef struct {
   DWORD pid;
@@ -286,6 +292,142 @@ Napi::Value GetProcessPreferredUILanguagesWrap(const Napi::CallbackInfo &info) {
   return GetPreferredLanguage(info, &GetProcessPreferredUILanguages, "GetProcessPreferredUILanguages");
 }
 
+Napi::Value CreateAppContainer(const Napi::CallbackInfo &info) {
+  std::wstring containerName = toWC(info[0]);
+  std::wstring displayName = toWC(info[1]);
+  std::wstring description = toWC(info[2]);
+  PSID sid;
+  HRESULT res = ::CreateAppContainerProfile(containerName.c_str(), displayName.c_str(), description.c_str(), nullptr, 0, &sid);
+  if (FAILED(res)) {
+    if (HRESULT_CODE(res) == ERROR_ALREADY_EXISTS) {
+      return info.Env().Undefined();
+    }
+    return ThrowHResultException(info.Env(), res, "CreateAppContainerProfile");
+  }
+
+  return info.Env().Undefined();
+}
+
+Napi::Value DeleteAppContainer(const Napi::CallbackInfo& info) {
+  std::wstring containerName = toWC(info[0]);
+  HRESULT res = ::DeleteAppContainerProfile(containerName.c_str());
+  if (FAILED(res)) {
+    return ThrowHResultException(info.Env(), res, "DeleteAppContainerProfile");
+  }
+  return info.Env().Undefined();
+}
+
+Napi::Value RunInContainer(const Napi::CallbackInfo& info) {
+  std::wstring containerName = toWC(info[0]);
+  std::wstring processPath = toWC(info[1]);
+  std::wstring cwdPath = toWC(info[2]);
+
+  PSID sid;
+  HRESULT res = ::DeriveAppContainerSidFromAppContainerName(containerName.c_str(), &sid);
+  if (FAILED(res)) {
+    return ThrowHResultException(info.Env(), res, "DeriveAppContainerSidFromAppContainerName");
+  }
+
+  STARTUPINFOEX si = { sizeof(si) };
+  PROCESS_INFORMATION pi;
+  SECURITY_CAPABILITIES sc = { 0 };
+  sc.AppContainerSid = sid;
+
+  try {
+    SIZE_T size = 0;
+    // pre-flight to determine required size
+    ::InitializeProcThreadAttributeList(nullptr, 1, 0, &size);
+
+    std::vector<BYTE> buffer;
+    buffer.resize(size);
+    si.lpAttributeList = reinterpret_cast<LPPROC_THREAD_ATTRIBUTE_LIST>(buffer.data());
+
+    checkedBool(::InitializeProcThreadAttributeList(si.lpAttributeList, 1, 0, &size),
+      "InitializeProcThreadAttributeList", containerName.c_str());
+
+    checkedBool(::UpdateProcThreadAttribute(si.lpAttributeList, 0, PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES, &sc, sizeof(sc), nullptr, nullptr),
+      "UpdateProcThreadAttribute", containerName.c_str());
+
+    checkedBool(::CreateProcessW(nullptr, processPath.data(), nullptr, nullptr, FALSE, EXTENDED_STARTUPINFO_PRESENT, nullptr, cwdPath.c_str(), (LPSTARTUPINFO)&si, &pi),
+      "CreateProcessW", processPath.c_str());
+
+    return info.Env().Undefined();
+  }
+  catch (const std::exception& e) {
+    return Rethrow(info.Env(), e);
+  }
+}
+
+void GrantPermissionNamed(PSID sid, LPWSTR name, SE_OBJECT_TYPE type, DWORD accessPermissions)
+{
+  EXPLICIT_ACCESS_W explicitAccess;
+  explicitAccess.Trustee.ptstrName = (PWSTR)sid;
+  explicitAccess.grfAccessMode = GRANT_ACCESS;
+  explicitAccess.grfInheritance = OBJECT_INHERIT_ACE | CONTAINER_INHERIT_ACE;
+  explicitAccess.grfAccessPermissions = accessPermissions;
+
+  explicitAccess.Trustee.pMultipleTrustee = nullptr;
+  explicitAccess.Trustee.MultipleTrusteeOperation = NO_MULTIPLE_TRUSTEE;
+  // explicitAccess.Trustee.TrusteeType = TRUSTEE_IS_WELL_KNOWN_GROUP;
+  explicitAccess.Trustee.TrusteeType = TRUSTEE_IS_GROUP;
+  explicitAccess.Trustee.TrusteeForm = TRUSTEE_IS_SID;
+
+  PACL oldACL;
+  checked(GetNamedSecurityInfoW(name, type, DACL_SECURITY_INFORMATION, nullptr, nullptr, &oldACL, nullptr, nullptr), "GetNamedSecurityInfoW", name);
+
+  PACL newACL;
+  checked(SetEntriesInAclW(1, &explicitAccess, oldACL, &newACL), "SetEntriesInAclW", name);
+
+  checked(SetNamedSecurityInfoW(name, type, DACL_SECURITY_INFORMATION, nullptr, nullptr, newACL, nullptr), "SetNamedSecurityInfoW", name);
+}
+
+SE_OBJECT_TYPE typeFromName(const std::string& name) {
+  static const std::unordered_map<std::string, SE_OBJECT_TYPE> typeNameMap{
+    { "file_object", SE_FILE_OBJECT },
+    { "service", SE_SERVICE },
+    { "printer", SE_PRINTER },
+    { "registry_key", SE_REGISTRY_KEY },
+    { "se_lmshare", SE_LMSHARE },
+    { "se_kernel_object", SE_KERNEL_OBJECT },
+    { "se_window_object", SE_WINDOW_OBJECT },
+    { "se_ds_object", SE_DS_OBJECT },
+    { "se_ds_object_all", SE_DS_OBJECT_ALL },
+    { "se_provider_defined_object", SE_PROVIDER_DEFINED_OBJECT },
+    { "se_wmiguid_object", SE_WMIGUID_OBJECT },
+    { "se_registry_wow64_32key", SE_REGISTRY_WOW64_32KEY },
+    { "se_registry_wow64_64key", SE_REGISTRY_WOW64_64KEY },
+  };
+
+  auto type = typeNameMap.find(name);
+  if (type != typeNameMap.end()) {
+    return type->second;
+  }
+
+  throw std::exception((std::string("invalid type \"") + name + "\"").c_str());
+}
+
+Napi::Value GrantAppContainer(const Napi::CallbackInfo& info) {
+  std::wstring containerName = toWC(info[0]);
+  std::wstring objectName = toWC(info[1]);
+  std::string typeName = info[2].ToString();
+  Napi::Array permissions = info[3].As<Napi::Array>();
+
+
+  PSID sid;
+  HRESULT res = ::DeriveAppContainerSidFromAppContainerName(containerName.c_str(), &sid);
+  if (FAILED(res)) {
+    return ThrowHResultException(info.Env(), res, "DeriveAppContainerSidFromAppContainerName");
+  }
+  
+  try {
+    GrantPermissionNamed(sid, objectName.data(), typeFromName(typeName), mapPermissions(permissions));
+    return info.Env().Undefined();
+  }
+  catch (const std::exception& e) {
+    return Rethrow(info.Env(), e);
+  }
+}
+
 namespace Processes {
   void Init(Napi::Env env, Napi::Object exports) {
     exports.Set("GetProcessList", Napi::Function::New(env, GetProcessListWrap));
@@ -299,5 +441,10 @@ namespace Processes {
     exports.Set("GetSystemPreferredUILanguages", Napi::Function::New(env, GetSystemPreferredUILanguagesWrap));
     exports.Set("GetProcessPreferredUILanguages", Napi::Function::New(env, GetProcessPreferredUILanguagesWrap));
     exports.Set("SetProcessPreferredUILanguages", Napi::Function::New(env, SetProcessPreferredUILanguagesWrap));
+
+    exports.Set("CreateAppContainer", Napi::Function::New(env, CreateAppContainer));
+    exports.Set("DeleteAppContainer", Napi::Function::New(env, DeleteAppContainer));
+    exports.Set("GrantAppContainer", Napi::Function::New(env, GrantAppContainer));
+    exports.Set("RunInContainer", Napi::Function::New(env, RunInContainer));
   }
 }

@@ -115,3 +115,5 @@ inline Napi::Value toNapi(const Napi::Env &env, LONG input) {
 
 Napi::Array convertMultiSZ(const Napi::Env &env, wchar_t *input, DWORD maxLength);
 
+#define checkedBool(res, name, filePath) { if (!res) { throw WinApiException(::GetLastError(), name, filePath == nullptr ? nullptr : toMB(filePath, CodePage::UTF8, wcslen(filePath)).c_str()); } }
+#define checked(res, name, filePath) { if (res != ERROR_SUCCESS) { throw WinApiException(res, name, filePath == nullptr ? nullptr : toMB(filePath, CodePage::UTF8, wcslen(filePath)).c_str()); } }
