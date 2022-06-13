@@ -429,3 +429,45 @@ export function InitiateSystemShutdown(message: string, delay: number, askToClos
 export function AbortSystemShutdown(): boolean;
 
 
+export type PermissionObjectType = 'file_object'
+                                 | 'service'
+                                 | 'printer'
+                                 | 'registry_key'
+                                 | 'se_lmshare'
+                                 | 'se_kernel_object'
+                                 | 'se_window_object'
+                                 | 'se_ds_object'
+                                 | 'se_ds_object_all'
+                                 | 'se_provider_defined_object'
+                                 | 'se_wmiguid_object'
+                                 | 'se_registry_wow64_32key'
+                                 | 'se_registry_wow64_64key'
+                                 // custom types to make special handling easier.
+                                 // map to one of the generic types above
+                                 | 'named_pipe'
+                                 ;
+
+export type PermissionValue = 'read_data'
+                            | 'list_directory'
+                            | 'write_data'
+                            | 'add_file'
+                            | 'append_data'
+                            | 'add_subdirectory'
+                            | 'create_pipe_instance'
+                            | 'read_ea'
+                            | 'write_ea'
+                            | 'execute'
+                            | 'traverse'
+                            | 'delete_child'
+                            | 'read_attributes'
+                            | 'write_attributes'
+                            | 'all_access'
+                            | 'generic_read'
+                            | 'generic_write'
+                            | 'generic_execute';
+
+export function CreateAppContainer(containerName: string, displayName: string, description: string);
+export function DeleteAppContainer(containerName: string);
+export function GrantAppContainer(containerName: string, objectName: string, typeName: PermissionObjectType, permissions: PermissionValue[]);
+export function RunInContainer(containerName: string, processPath: string, cwdPath: string, onExit: (code: number) => void, stdout: (message: string) => void);
+

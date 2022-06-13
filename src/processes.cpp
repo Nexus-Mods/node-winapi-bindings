@@ -176,7 +176,7 @@ Napi::Value GetProcessWindowListWrap(const Napi::CallbackInfo &info) {
         continue;
       }
 
-      WINDOWINFO winInfo;
+      WINDOWINFO winInfo = { 0 };
       GetWindowInfo(windowIter, &winInfo);
 
       uint64_t winId = reinterpret_cast<uint64_t>(windowIter);
@@ -317,10 +317,79 @@ Napi::Value DeleteAppContainer(const Napi::CallbackInfo& info) {
   return info.Env().Undefined();
 }
 
+
+class ProcessMonitor : public Napi::AsyncProgressQueueWorker<char> {
+public:
+  ProcessMonitor(const Napi::Function &onExit, const Napi::Function &onStdOut, HANDLE proc, HANDLE stdOutHandle)
+    : Napi::AsyncProgressQueueWorker<char>(onExit)
+    , mOnStdOut(Napi::Persistent(onStdOut))
+  {
+    mProc = proc;
+    mStdOut = stdOutHandle;
+  }
+
+  ~ProcessMonitor() {
+    ::CloseHandle(mProc);
+    ::CloseHandle(mStdOut);
+  }
+
+  virtual void OnProgress(const char* data, size_t size) override {
+    try {
+      std::string copy(data, size);
+      mOnStdOut.Call(Receiver().Value(), std::initializer_list<napi_value>{ Napi::String::From(Env(), copy) });
+    }
+    catch (const std::exception& e) {
+      SetError(e.what());
+    }
+  }
+
+  virtual void Execute(const ExecutionProgress &progress) override {
+    static const int BUFSIZE = 4096;
+    char buf[BUFSIZE + 1];
+    DWORD readBytes = BUFSIZE;
+    BOOL res;
+
+    bool running = true;
+
+    while (running) {
+      memset(buf, '\0', BUFSIZE + 1);
+      res = ::ReadFile(mStdOut, buf, BUFSIZE, &readBytes, nullptr);
+      if (!res || (readBytes == 0)) {
+        break;
+      }
+
+      buf[readBytes] = '\0';
+      // fixing windows line breaks
+      if (buf[readBytes - 2] == '\r') {
+        buf[readBytes - 2] = '\n';
+        buf[readBytes - 1] = '\0';
+        readBytes -= 1;
+      }
+
+      progress.Send(buf, readBytes);
+    }
+  }
+
+  virtual void OnOK() override {
+    DWORD exitCode = 0;
+    ::GetExitCodeProcess(mProc, &exitCode);
+    Callback().Call(Receiver().Value(), std::initializer_list<napi_value>{ Napi::Number::From(Env(), exitCode) });
+  }
+
+
+private:
+  Napi::FunctionReference mOnStdOut;
+  HANDLE mProc;
+  HANDLE mStdOut;
+};
+
+
 Napi::Value RunInContainer(const Napi::CallbackInfo& info) {
   std::wstring containerName = toWC(info[0]);
   std::wstring processPath = toWC(info[1]);
   std::wstring cwdPath = toWC(info[2]);
+  Napi::Function onExit = info[3].As<Napi::Function>();
+  Napi::Function onStdout = info[4].As<Napi::Function>();
 
   PSID sid;
   HRESULT res = ::DeriveAppContainerSidFromAppContainerName(containerName.c_str(), &sid);
@@ -328,10 +397,10 @@ Napi::Value RunInContainer(const Napi::CallbackInfo& info) {
     return ThrowHResultException(info.Env(), res, "DeriveAppContainerSidFromAppContainerName");
   }
 
-  STARTUPINFOEX si = { sizeof(si) };
-  PROCESS_INFORMATION pi;
-  SECURITY_CAPABILITIES sc = { 0 };
-  sc.AppContainerSid = sid;
+  STARTUPINFOEX startupInfo = { sizeof(startupInfo) };
+  PROCESS_INFORMATION processInfo;
+  SECURITY_CAPABILITIES secCap = { 0 };
+  secCap.AppContainerSid = sid;
 
   try {
     SIZE_T size = 0;
@@ -340,18 +409,45 @@ Napi::Value RunInContainer(const Napi::CallbackInfo& info) {
 
     std::vector<BYTE> buffer;
     buffer.resize(size);
-    si.lpAttributeList = reinterpret_cast<LPPROC_THREAD_ATTRIBUTE_LIST>(buffer.data());
+    startupInfo.lpAttributeList = reinterpret_cast<LPPROC_THREAD_ATTRIBUTE_LIST>(buffer.data());
 
-    checkedBool(::InitializeProcThreadAttributeList(si.lpAttributeList, 1, 0, &size),
+    SECURITY_ATTRIBUTES secAttr;
+    ::ZeroMemory(&secAttr, sizeof(secAttr));
+    secAttr.nLength = sizeof(SECURITY_ATTRIBUTES);
+    secAttr.bInheritHandle = TRUE;
+    secAttr.lpSecurityDescriptor = nullptr;
+
+    HANDLE stdinR, stdinW, stdoutR, stdoutW, stderrR, stderrW;
+
+    checkedBool(::CreatePipe(&stdoutR, &stdoutW, &secAttr, 0), "CreatePipe", processPath.c_str());
+    checkedBool(::SetHandleInformation(stdoutR, HANDLE_FLAG_INHERIT, 0), "SetHandleInformation", processPath.c_str());
+
+    startupInfo.StartupInfo.hStdError = stdoutW;
+    startupInfo.StartupInfo.hStdOutput = stdoutW;
+    startupInfo.StartupInfo.dwFlags |= STARTF_USESTDHANDLES;
+
+    checkedBool(::InitializeProcThreadAttributeList(startupInfo.lpAttributeList, 1, 0, &size),
       "InitializeProcThreadAttributeList", containerName.c_str());
 
-    checkedBool(::UpdateProcThreadAttribute(si.lpAttributeList, 0, PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES, &sc, sizeof(sc), nullptr, nullptr),
+    checkedBool(::UpdateProcThreadAttribute(startupInfo.lpAttributeList, 0, PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES, &secCap, sizeof(secCap), nullptr, nullptr),
       "UpdateProcThreadAttribute", containerName.c_str());
 
-    checkedBool(::CreateProcessW(nullptr, processPath.data(), nullptr, nullptr, FALSE, EXTENDED_STARTUPINFO_PRESENT, nullptr, cwdPath.c_str(), (LPSTARTUPINFO)&si, &pi),
+    DWORD processFlags = CREATE_UNICODE_ENVIRONMENT | EXTENDED_STARTUPINFO_PRESENT;
+
+    checkedBool(::CreateProcessW(nullptr, processPath.data(), nullptr, nullptr, TRUE,
+                                 processFlags, nullptr, cwdPath.c_str(),
+                                 (LPSTARTUPINFOW)&startupInfo, &processInfo),
       "CreateProcessW", processPath.c_str());
 
-    return info.Env().Undefined();
+    // ::CloseHandle(processInfo.hProcess);
+    ::CloseHandle(processInfo.hThread);
+    ::CloseHandle(stdoutW);
+    stdoutW = nullptr;
+
+    auto worker = new ProcessMonitor(onExit, onStdout, processInfo.hProcess, stdoutR);
+    worker->Queue();
+
+    return Napi::Number::From(info.Env(), processInfo.dwProcessId);
   }
   catch (const std::exception& e) {
     return Rethrow(info.Env(), e);
