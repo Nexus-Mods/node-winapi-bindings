@@ -358,6 +358,29 @@ Napi::Value RunInContainer(const Napi::CallbackInfo& info) {
   }
 }
 
+void GrantPermission(PSID sid, HANDLE handle, LPCWSTR name, SE_OBJECT_TYPE type, DWORD accessPermissions)
+{
+  EXPLICIT_ACCESS_W explicitAccess;
+  explicitAccess.Trustee.ptstrName = (PWSTR)sid;
+  explicitAccess.grfAccessMode = GRANT_ACCESS;
+  explicitAccess.grfInheritance = OBJECT_INHERIT_ACE | CONTAINER_INHERIT_ACE;
+  explicitAccess.grfAccessPermissions = accessPermissions;
+
+  explicitAccess.Trustee.pMultipleTrustee = nullptr;
+  explicitAccess.Trustee.MultipleTrusteeOperation = NO_MULTIPLE_TRUSTEE;
+  // explicitAccess.Trustee.TrusteeType = TRUSTEE_IS_WELL_KNOWN_GROUP;
+  explicitAccess.Trustee.TrusteeType = TRUSTEE_IS_GROUP;
+  explicitAccess.Trustee.TrusteeForm = TRUSTEE_IS_SID;
+
+  PACL oldACL;
+  checked(GetSecurityInfo(handle, type, DACL_SECURITY_INFORMATION, nullptr, nullptr, &oldACL, nullptr, nullptr), "GetSecurityInfo", name);
+
+  PACL newACL;
+  checked(SetEntriesInAclW(1, &explicitAccess, oldACL, &newACL), "SetEntriesInAclW", name);
+
+  checked(SetSecurityInfo(handle, type, DACL_SECURITY_INFORMATION, nullptr, nullptr, newACL, nullptr), "SetSecurityInfo", name);
+}
+
 void GrantPermissionNamed(PSID sid, LPWSTR name, SE_OBJECT_TYPE type, DWORD accessPermissions)
 {
   EXPLICIT_ACCESS_W explicitAccess;
@@ -396,6 +419,9 @@ SE_OBJECT_TYPE typeFromName(const std::string& name) {
     { "se_wmiguid_object", SE_WMIGUID_OBJECT },
     { "se_registry_wow64_32key", SE_REGISTRY_WOW64_32KEY },
     { "se_registry_wow64_64key", SE_REGISTRY_WOW64_64KEY },
+
+    // custom object type to allow for special handling
+    { "named_pipe", SE_KERNEL_OBJECT },
   };
 
   auto type = typeNameMap.find(name);
@@ -420,7 +446,18 @@ Napi::Value GrantAppContainer(const Napi::CallbackInfo& info) {
   }
   
   try {
-    GrantPermissionNamed(sid, objectName.data(), typeFromName(typeName), mapPermissions(permissions));
+    SE_OBJECT_TYPE type = typeFromName(typeName);
+    // the default approach of granting permission to named objects doesn't work for all kind of objects,
+    // we have to implement special handling for some
+    if (typeName == "named_pipe")
+    {
+      HANDLE handle = CreateFileW(objectName.c_str(), WRITE_DAC, 0, nullptr, OPEN_EXISTING, 0, nullptr);
+      checkedBool((handle != INVALID_HANDLE_VALUE), "CreateFileW", objectName.c_str());
+      GrantPermission(sid, handle, objectName.c_str(), type, mapPermissions(permissions));
+    }
+    else {
+      GrantPermissionNamed(sid, objectName.data(), type, mapPermissions(permissions));
+    }
     return info.Env().Undefined();
   }
   catch (const std::exception& e) {
