@@ -428,7 +428,9 @@ export function InitiateSystemShutdown(message: string, delay: number, askToClos
  */
 export function AbortSystemShutdown(): boolean;
 
-
+/**
+ * types of objects we can assign permissions for
+ */
 export type PermissionObjectType = 'file_object'
                                  | 'service'
                                  | 'printer'
@@ -447,6 +449,9 @@ export type PermissionObjectType = 'file_object'
                                  | 'named_pipe'
                                  ;
 
+/**
+* permission value we can assign for an object
+*/
 export type PermissionValue = 'read_data'
                             | 'list_directory'
                             | 'write_data'
@@ -466,8 +471,46 @@ export type PermissionValue = 'read_data'
                             | 'generic_write'
                             | 'generic_execute';
 
+/**
+ * Create an app container (environment with reduced access rights)
+ * @param containerName the id of the container, used in all functions to refer to it
+ * @param displayName a display name for the container. tbh I haven't figured out yet _where_ this is displayed
+ * @param description a description for the container. Again: no clue where this actually appears
+ * @see https://docs.microsoft.com/en-us/windows/win32/api/userenv/nf-userenv-createappcontainerprofile
+ * @note These containers and their settings persist, it's probably a good idea to always (attempt) to
+ *       delete the container before creating it, otherwise you might be running with previously assigned permissions.
+ * @note I've found no documentation on what kind of resources a container allocates or whether they get
+ *       cleaned up automatically so for the time being I'd advise for reusing containerNames to ensure we're
+ *       not leaking resources like crazy
+ */
 export function CreateAppContainer(containerName: string, displayName: string, description: string);
-export function DeleteAppContainer(containerName: string);
-export function GrantAppContainer(containerName: string, objectName: string, typeName: PermissionObjectType, permissions: PermissionValue[]);
-export function RunInContainer(containerName: string, processPath: string, cwdPath: string, onExit: (code: number) => void, stdout: (message: string) => void);
 
+/**
+ * Delete an app container
+ * @param containerName id of the container
+ */
+export function DeleteAppContainer(containerName: string);
+
+/**
+ * Grant a named permission to the specified app container
+ * @param containerName id of the container
+ * @param objectName name of the object (could be a file/directory name, registry key, service name, printer name, ...)
+ * @param typeName type of object
+ * @param permissions array of permissions to grant
+ * @see https://docs.microsoft.com/en-us/windows/win32/api/aclapi/nf-aclapi-getnamedsecurityinfoa
+ * @note On top of the objects supported by GetNamedSecurityInfo this supports a custom typeName "named_pipe" which
+ *       will grant access to a named pipe (which is a se_kernel_object but not supported by GetNamedSecurityInfo as one).
+ *       Please note that to assign the permission that pipe will be opened but no data sent to it, client code needs
+ *       to be able to deal with that.
+ */
+export function GrantAppContainer(containerName: string, objectName: string, typeName: PermissionObjectType, permissions: PermissionValue[]);
+/**
+ * Run a process inside an app container
+ * @param containerName id of the container
+ * @param processPath path of the executable to run
+ * @param cwdPath current working directory for the process
+ * @param onExit event triggered when the process ends
+ * @param onStdOut event triggered when the process outputs to stdout *or stderr*. At this time there is no way
+ *                 to distinguish between stdout and stderr
+ */
+export function RunInContainer(containerName: string, processPath: string, cwdPath: string, onExit: (code: number) => void, onStdOut: (message: string) => void);

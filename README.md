@@ -59,6 +59,12 @@ Auxiliary
 - WhoLocks (given a file path, returns list of processes with a lock on the file)
 - WalkDir (recursive directory walk (more efficient on windows than the usual readdir/stat algorithm))
 
+App Container
+- CreateAppContainer (wrapper for CreateAppContainerProfile)
+- DeleteAppContainer (wrapper for DeleteAppContainerProfile)
+- GrantAppContainer (wrapper for Get(Named)SecurityInfo/SetEntriesInAcl/Set(Named)SecurityInfo)
+- RunInContainer (wrapper for CreateProcess using an app container)
+
 # Supported OS
 
 * Windows (duh!)
