@@ -547,7 +547,7 @@ Napi::Value GrantAppContainer(const Napi::CallbackInfo& info) {
     // we have to implement special handling for some
     if (typeName == "named_pipe")
     {
-      HANDLE handle = CreateFileW(objectName.c_str(), WRITE_DAC, 0, nullptr, OPEN_EXISTING, 0, nullptr);
+      HANDLE handle = CreateFileW(objectName.c_str(), WRITE_DAC | READ_CONTROL, 0, nullptr, OPEN_EXISTING, 0, nullptr);
       checkedBool((handle != INVALID_HANDLE_VALUE), "CreateFileW", objectName.c_str());
       GrantPermission(sid, handle, objectName.c_str(), type, mapPermissions(permissions));
     }
