@@ -58,12 +58,14 @@
             ],
             "msvs_settings": {
                 "VCCLCompilerTool": {
-                    "ExceptionHandling": 1
+                    "ExceptionHandling": 1,
+                    "RuntimeLibrary": 0
                 }
             },
             "msbuild_settings": {
               "ClCompile": {
-                "AdditionalOptions": ["-std:c++17"]
+                "AdditionalOptions": ["-std:c++17", "/MT"],
+                "RuntimeLibrary": "MultiThreaded"
               }
             }
         }
