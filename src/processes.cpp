@@ -8,8 +8,6 @@
 #include <AclAPI.h>
 #include <future>
 
-#pragma comment(lib, "UserEnv.lib")
-
 typedef struct {
   DWORD pid;
   HWND hwnd;
@@ -292,12 +290,69 @@ Napi::Value GetProcessPreferredUILanguagesWrap(const Napi::CallbackInfo &info) {
   return GetPreferredLanguage(info, &GetProcessPreferredUILanguages, "GetProcessPreferredUILanguages");
 }
 
+
+typedef USERENVAPI
+HRESULT (WINAPI *CreateAppContainerProfileType)(
+    _In_ PCWSTR pszAppContainerName,
+    _In_ PCWSTR pszDisplayName,
+    _In_ PCWSTR pszDescription,
+    _In_reads_opt_(dwCapabilityCount) PSID_AND_ATTRIBUTES pCapabilities,
+    _In_ DWORD dwCapabilityCount,
+    _Outptr_ PSID* ppSidAppContainerSid);
+
+typedef USERENVAPI
+HRESULT (WINAPI *DeriveAppContainerSidFromAppContainerNameType)(
+    _In_ PCWSTR pszAppContainerName,
+    _Outptr_ PSID *ppsidAppContainerSid);
+
+typedef USERENVAPI
+HRESULT (WINAPI *DeleteAppContainerProfileType)(
+    _In_ PCWSTR pszAppContainerName);
+
+struct UserEnv {
+  static UserEnv& instance() {
+    static UserEnv sInstance;
+    return sInstance;
+  }
+
+  CreateAppContainerProfileType CreateAppContainerProfile;
+  DeriveAppContainerSidFromAppContainerNameType DeriveAppContainerSidFromAppContainerName;
+  DeleteAppContainerProfileType DeleteAppContainerProfile;
+
+  bool valid() const { return m_Valid; }
+
+private:
+  bool m_Valid{ false };
+
+  UserEnv()
+    : CreateAppContainerProfile(nullptr)
+    , DeriveAppContainerSidFromAppContainerName(nullptr)
+    , DeleteAppContainerProfile(nullptr)
+  {
+    HMODULE mod = ::LoadLibraryW(L"UserEnv.dll");
+    if (mod == nullptr) {
+      return;
+    }
+    CreateAppContainerProfile = (CreateAppContainerProfileType)::GetProcAddress(mod, "CreateAppContainerProfile");
+    DeriveAppContainerSidFromAppContainerName = (DeriveAppContainerSidFromAppContainerNameType)::GetProcAddress(mod, "DeriveAppContainerSidFromAppContainerName");
+    DeleteAppContainerProfile = (DeleteAppContainerProfileType)::GetProcAddress(mod, "DeleteAppContainerProfile");
+
+    m_Valid = true;
+  }
+};
+
+
 Napi::Value CreateAppContainer(const Napi::CallbackInfo &info) {
+  if (!UserEnv::instance().valid()) {
+    return info.Env().Undefined();
+  }
+
   std::wstring containerName = toWC(info[0]);
   std::wstring displayName = toWC(info[1]);
   std::wstring description = toWC(info[2]);
   PSID sid;
-  HRESULT res = ::CreateAppContainerProfile(containerName.c_str(), displayName.c_str(), description.c_str(), nullptr, 0, &sid);
+  HRESULT res = UserEnv::instance().CreateAppContainerProfile(containerName.c_str(), displayName.c_str(), description.c_str(), nullptr, 0, &sid);
+  ScopeGuard onExit([&]() { ::FreeSid(sid); });
   if (FAILED(res)) {
     if (HRESULT_CODE(res) == ERROR_ALREADY_EXISTS) {
       return info.Env().Undefined();
@@ -309,8 +364,12 @@ Napi::Value CreateAppContainer(const Napi::CallbackInfo &info) {
 }
 
 Napi::Value DeleteAppContainer(const Napi::CallbackInfo& info) {
+  if (!UserEnv::instance().valid()) {
+    return info.Env().Undefined();
+  }
+
   std::wstring containerName = toWC(info[0]);
-  HRESULT res = ::DeleteAppContainerProfile(containerName.c_str());
+  HRESULT res = UserEnv::instance().DeleteAppContainerProfile(containerName.c_str());
   if (FAILED(res)) {
     return ThrowHResultException(info.Env(), res, "DeleteAppContainerProfile");
   }
@@ -388,14 +447,21 @@ Napi::Value RunInContainer(const Napi::CallbackInfo& info) {
   std::wstring containerName = toWC(info[0]);
   std::wstring processPath = toWC(info[1]);
   std::wstring cwdPath = toWC(info[2]);
-  Napi::Function onExit = info[3].As<Napi::Function>();
-  Napi::Function onStdout = info[4].As<Napi::Function>();
+  Napi::Function onExitCB = info[3].As<Napi::Function>();
+  Napi::Function onStdoutCB = info[4].As<Napi::Function>();
 
-  PSID sid;
-  HRESULT res = ::DeriveAppContainerSidFromAppContainerName(containerName.c_str(), &sid);
-  if (FAILED(res)) {
-    return ThrowHResultException(info.Env(), res, "DeriveAppContainerSidFromAppContainerName");
+  PSID sid = nullptr;
+  if (UserEnv::instance().valid()) {
+    HRESULT res = UserEnv::instance().DeriveAppContainerSidFromAppContainerName(containerName.c_str(), &sid);
+    if (FAILED(res)) {
+      return ThrowHResultException(info.Env(), res, "DeriveAppContainerSidFromAppContainerName");
+    }
   }
+  ScopeGuard onExit([&]() {
+    if (sid != nullptr) {
+      ::FreeSid(sid);
+    }
+    });
 
   STARTUPINFOEX startupInfo = { sizeof(startupInfo) };
   PROCESS_INFORMATION processInfo;
@@ -444,7 +510,7 @@ Napi::Value RunInContainer(const Napi::CallbackInfo& info) {
     ::CloseHandle(stdoutW);
     stdoutW = nullptr;
 
-    auto worker = new ProcessMonitor(onExit, onStdout, processInfo.hProcess, stdoutR);
+    auto worker = new ProcessMonitor(onExitCB, onStdoutCB, processInfo.hProcess, stdoutR);
     worker->Queue();
 
     return Napi::Number::From(info.Env(), processInfo.dwProcessId);
@@ -534,12 +600,16 @@ Napi::Value GrantAppContainer(const Napi::CallbackInfo& info) {
   std::string typeName = info[2].ToString();
   Napi::Array permissions = info[3].As<Napi::Array>();
 
+  if (!UserEnv::instance().valid()) {
+    return info.Env().Undefined();
+  }
 
   PSID sid;
-  HRESULT res = ::DeriveAppContainerSidFromAppContainerName(containerName.c_str(), &sid);
+  HRESULT res = UserEnv::instance().DeriveAppContainerSidFromAppContainerName(containerName.c_str(), &sid);
   if (FAILED(res)) {
     return ThrowHResultException(info.Env(), res, "DeriveAppContainerSidFromAppContainerName");
   }
+  ScopeGuard onExit([&]() { ::FreeSid(sid); });
   
   try {
     SE_OBJECT_TYPE type = typeFromName(typeName);
@@ -548,6 +618,7 @@ Napi::Value GrantAppContainer(const Napi::CallbackInfo& info) {
     if (typeName == "named_pipe")
     {
       HANDLE handle = CreateFileW(objectName.c_str(), WRITE_DAC | READ_CONTROL, 0, nullptr, OPEN_EXISTING, 0, nullptr);
+      ScopeGuard onExit([&]() { ::CloseHandle(handle); });
       checkedBool((handle != INVALID_HANDLE_VALUE), "CreateFileW", objectName.c_str());
       GrantPermission(sid, handle, objectName.c_str(), type, mapPermissions(permissions));
     }
