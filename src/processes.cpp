@@ -337,10 +337,15 @@ private:
     DeriveAppContainerSidFromAppContainerName = (DeriveAppContainerSidFromAppContainerNameType)::GetProcAddress(mod, "DeriveAppContainerSidFromAppContainerName");
     DeleteAppContainerProfile = (DeleteAppContainerProfileType)::GetProcAddress(mod, "DeleteAppContainerProfile");
 
-    m_Valid = true;
+    m_Valid = (CreateAppContainerProfile != nullptr)
+           && (DeriveAppContainerSidFromAppContainerName != nullptr)
+           && (DeleteAppContainerProfile != nullptr);
   }
 };
 
+Napi::Value SupportsAppContainer(const Napi::CallbackInfo& info) {
+  return Napi::Boolean::New(info.Env(), UserEnv::instance().valid());
+}
 
 Napi::Value CreateAppContainer(const Napi::CallbackInfo &info) {
   if (!UserEnv::instance().valid()) {
@@ -495,8 +500,10 @@ Napi::Value RunInContainer(const Napi::CallbackInfo& info) {
     checkedBool(::InitializeProcThreadAttributeList(startupInfo.lpAttributeList, 1, 0, &size),
       "InitializeProcThreadAttributeList", containerName.c_str());
 
-    checkedBool(::UpdateProcThreadAttribute(startupInfo.lpAttributeList, 0, PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES, &secCap, sizeof(secCap), nullptr, nullptr),
-      "UpdateProcThreadAttribute", containerName.c_str());
+    if (UserEnv::instance().valid()) {
+      checkedBool(::UpdateProcThreadAttribute(startupInfo.lpAttributeList, 0, PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES, &secCap, sizeof(secCap), nullptr, nullptr),
+        "UpdateProcThreadAttribute", containerName.c_str());
+    }
 
     DWORD processFlags = CREATE_UNICODE_ENVIRONMENT | EXTENDED_STARTUPINFO_PRESENT;
 
@@ -646,6 +653,7 @@ namespace Processes {
     exports.Set("GetProcessPreferredUILanguages", Napi::Function::New(env, GetProcessPreferredUILanguagesWrap));
     exports.Set("SetProcessPreferredUILanguages", Napi::Function::New(env, SetProcessPreferredUILanguagesWrap));
 
+    exports.Set("SupportsAppContainer", Napi::Function::New(env, SupportsAppContainer));
     exports.Set("CreateAppContainer", Napi::Function::New(env, CreateAppContainer));
     exports.Set("DeleteAppContainer", Napi::Function::New(env, DeleteAppContainer));
     exports.Set("GrantAppContainer", Napi::Function::New(env, GrantAppContainer));

@@ -472,6 +472,15 @@ export type PermissionValue = 'read_data'
                             | 'generic_execute';
 
 /**
+ * Returns true if this version of windows supports app containers, false otherwise.
+ * This should be true on Windows 8 and newer, false on Windows 7
+ * If this is false, the other related functions (CreateAppContainer, ...) should all be nops, RunInContainer
+ * should still start the process so it should be safe (in the sense that your code won't crash) to use them
+ * on Windows 7 but there will be no isolation obviously
+ */
+export function SupportsAppContainer(): boolean;
+
+/**
  * Create an app container (environment with reduced access rights)
  * @param containerName the id of the container, used in all functions to refer to it
  * @param displayName a display name for the container. tbh I haven't figured out yet _where_ this is displayed
