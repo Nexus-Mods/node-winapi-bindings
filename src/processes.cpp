@@ -348,37 +348,48 @@ Napi::Value SupportsAppContainer(const Napi::CallbackInfo& info) {
 }
 
 Napi::Value CreateAppContainer(const Napi::CallbackInfo &info) {
-  if (!UserEnv::instance().valid()) {
-    return info.Env().Undefined();
-  }
-
-  std::wstring containerName = toWC(info[0]);
-  std::wstring displayName = toWC(info[1]);
-  std::wstring description = toWC(info[2]);
-  PSID sid;
-  HRESULT res = UserEnv::instance().CreateAppContainerProfile(containerName.c_str(), displayName.c_str(), description.c_str(), nullptr, 0, &sid);
-  ScopeGuard onExit([&]() { ::FreeSid(sid); });
-  if (FAILED(res)) {
-    if (HRESULT_CODE(res) == ERROR_ALREADY_EXISTS) {
+  try {
+    if (!UserEnv::instance().valid()) {
       return info.Env().Undefined();
     }
-    return ThrowHResultException(info.Env(), res, "CreateAppContainerProfile");
-  }
 
-  return info.Env().Undefined();
+    std::wstring containerName = toWC(info[0]);
+    std::wstring displayName = toWC(info[1]);
+    std::wstring description = toWC(info[2]);
+    PSID sid;
+    HRESULT res = UserEnv::instance().CreateAppContainerProfile(containerName.c_str(), displayName.c_str(), description.c_str(), nullptr, 0, &sid);
+    ScopeGuard onExit([&]() { ::FreeSid(sid); });
+    if (FAILED(res)) {
+      if (HRESULT_CODE(res) == ERROR_ALREADY_EXISTS) {
+        return info.Env().Undefined();
+      }
+      return ThrowHResultException(info.Env(), res, "CreateAppContainerProfile");
+    }
+
+    return info.Env().Undefined();
+  }
+  catch (const std::exception& e) {
+    return Rethrow(info.Env(), e);
+  }
 }
 
 Napi::Value DeleteAppContainer(const Napi::CallbackInfo& info) {
-  if (!UserEnv::instance().valid()) {
+  try {
+    if (!UserEnv::instance().valid()) {
+      return info.Env().Undefined();
+    }
+
+    std::wstring containerName = toWC(info[0]);
+    HRESULT res = UserEnv::instance().DeleteAppContainerProfile(containerName.c_str());
+    if (FAILED(res)) {
+      return ThrowHResultException(info.Env(), res, "DeleteAppContainerProfile");
+    }
     return info.Env().Undefined();
   }
-
-  std::wstring containerName = toWC(info[0]);
-  HRESULT res = UserEnv::instance().DeleteAppContainerProfile(containerName.c_str());
-  if (FAILED(res)) {
-    return ThrowHResultException(info.Env(), res, "DeleteAppContainerProfile");
+  catch (const std::exception& e) {
+    return Rethrow(info.Env(), e);
   }
-  return info.Env().Undefined();
+
 }
 
 
@@ -449,31 +460,31 @@ private:
 
 
 Napi::Value RunInContainer(const Napi::CallbackInfo& info) {
-  std::wstring containerName = toWC(info[0]);
-  std::wstring processPath = toWC(info[1]);
-  std::wstring cwdPath = toWC(info[2]);
-  Napi::Function onExitCB = info[3].As<Napi::Function>();
-  Napi::Function onStdoutCB = info[4].As<Napi::Function>();
-
-  PSID sid = nullptr;
-  if (UserEnv::instance().valid()) {
-    HRESULT res = UserEnv::instance().DeriveAppContainerSidFromAppContainerName(containerName.c_str(), &sid);
-    if (FAILED(res)) {
-      return ThrowHResultException(info.Env(), res, "DeriveAppContainerSidFromAppContainerName");
-    }
-  }
-  ScopeGuard onExit([&]() {
-    if (sid != nullptr) {
-      ::FreeSid(sid);
-    }
-    });
-
-  STARTUPINFOEX startupInfo = { sizeof(startupInfo) };
-  PROCESS_INFORMATION processInfo;
-  SECURITY_CAPABILITIES secCap = { 0 };
-  secCap.AppContainerSid = sid;
-
   try {
+    std::wstring containerName = toWC(info[0]);
+    std::wstring processPath = toWC(info[1]);
+    std::wstring cwdPath = toWC(info[2]);
+    Napi::Function onExitCB = info[3].As<Napi::Function>();
+    Napi::Function onStdoutCB = info[4].As<Napi::Function>();
+
+    PSID sid = nullptr;
+    if (UserEnv::instance().valid()) {
+      HRESULT res = UserEnv::instance().DeriveAppContainerSidFromAppContainerName(containerName.c_str(), &sid);
+      if (FAILED(res)) {
+        return ThrowHResultException(info.Env(), res, "DeriveAppContainerSidFromAppContainerName");
+      }
+    }
+    ScopeGuard onExit([&]() {
+      if (sid != nullptr) {
+        ::FreeSid(sid);
+      }
+      });
+
+    STARTUPINFOEX startupInfo = { sizeof(startupInfo) };
+    PROCESS_INFORMATION processInfo;
+    SECURITY_CAPABILITIES secCap = { 0 };
+    secCap.AppContainerSid = sid;
+
     SIZE_T size = 0;
     // pre-flight to determine required size
     ::InitializeProcThreadAttributeList(nullptr, 1, 0, &size);
@@ -508,8 +519,8 @@ Napi::Value RunInContainer(const Napi::CallbackInfo& info) {
     DWORD processFlags = CREATE_UNICODE_ENVIRONMENT | EXTENDED_STARTUPINFO_PRESENT;
 
     checkedBool(::CreateProcessW(nullptr, processPath.data(), nullptr, nullptr, TRUE,
-                                 processFlags, nullptr, cwdPath.c_str(),
-                                 (LPSTARTUPINFOW)&startupInfo, &processInfo),
+      processFlags, nullptr, cwdPath.c_str(),
+      (LPSTARTUPINFOW)&startupInfo, &processInfo),
       "CreateProcessW", processPath.c_str());
 
     // ::CloseHandle(processInfo.hProcess);
@@ -602,23 +613,23 @@ SE_OBJECT_TYPE typeFromName(const std::string& name) {
 }
 
 Napi::Value GrantAppContainer(const Napi::CallbackInfo& info) {
-  std::wstring containerName = toWC(info[0]);
-  std::wstring objectName = toWC(info[1]);
-  std::string typeName = info[2].ToString();
-  Napi::Array permissions = info[3].As<Napi::Array>();
-
-  if (!UserEnv::instance().valid()) {
-    return info.Env().Undefined();
-  }
-
-  PSID sid;
-  HRESULT res = UserEnv::instance().DeriveAppContainerSidFromAppContainerName(containerName.c_str(), &sid);
-  if (FAILED(res)) {
-    return ThrowHResultException(info.Env(), res, "DeriveAppContainerSidFromAppContainerName");
-  }
-  ScopeGuard onExit([&]() { ::FreeSid(sid); });
-  
   try {
+    std::wstring containerName = toWC(info[0]);
+    std::wstring objectName = toWC(info[1]);
+    std::string typeName = info[2].ToString();
+    Napi::Array permissions = info[3].As<Napi::Array>();
+
+    if (!UserEnv::instance().valid()) {
+      return info.Env().Undefined();
+    }
+
+    PSID sid;
+    HRESULT res = UserEnv::instance().DeriveAppContainerSidFromAppContainerName(containerName.c_str(), &sid);
+    if (FAILED(res)) {
+      return ThrowHResultException(info.Env(), res, "DeriveAppContainerSidFromAppContainerName");
+    }
+    ScopeGuard onExit([&]() { ::FreeSid(sid); });
+
     SE_OBJECT_TYPE type = typeFromName(typeName);
     // the default approach of granting permission to named objects doesn't work for all kind of objects,
     // we have to implement special handling for some

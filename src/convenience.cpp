@@ -241,10 +241,16 @@ Napi::Value WalkDir(const Napi::CallbackInfo& info) {
   }
 }
 
+Napi::Value CrashProcess(const Napi::CallbackInfo& info) {
+  *(char*)0 = 0;
+  return info.Env().Undefined();
+}
+
 namespace Convenience {
   void Init(Napi::Env env, Napi::Object exports) {
     exports.Set("WhoLocks", Napi::Function::New(env, WhoLocks));
     exports.Set("IsThisWine", Napi::Function::New(env, IsThisWineWrap));
     exports.Set("WalkDir", Napi::Function::New(env, WalkDir));
+    exports.Set("__CrashProcess", Napi::Function::New(env, CrashProcess));
   }
 }
