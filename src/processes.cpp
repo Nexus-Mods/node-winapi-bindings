@@ -435,7 +435,7 @@ public:
 
       buf[readBytes] = '\0';
       // fixing windows line breaks
-      if (buf[readBytes - 2] == '\r') {
+      if ((readBytes >= 2) && (buf[readBytes - 2] == '\r')) {
         buf[readBytes - 2] = '\n';
         buf[readBytes - 1] = '\0';
         readBytes -= 1;
