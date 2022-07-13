@@ -1,6 +1,6 @@
 {
   "name": "winapi-bindings",
-  "version": "2.5.6",
+  "version": "2.5.7",
   "description": "Assorted winapi functions.",
   "main": "index.js",
   "repository": {
@@ -9,7 +9,7 @@
   },
   "scripts": {
     "savepdb": "cross-var shx cp build/Release/winapi.pdb pdbs/winapi.$npm_package_version.pdb",
-    "prebuild": "prebuild.cmd -r napi -t 4 -a x64 --prepack codesign && npm run savepdb",
+    "prebuild": "prebuild.cmd -r napi -t 4 -a x64 --prepack codesign",
     "preinstall": "autogypi",
     "install": "prebuild-install -r napi -t 4 -a x64 || node-gyp rebuild"
   },
