@@ -7,6 +7,7 @@
 #include <UserEnv.h>
 #include <AclAPI.h>
 #include <future>
+#include <unordered_map>
 
 typedef struct {
   DWORD pid;
@@ -353,12 +354,40 @@ Napi::Value CreateAppContainer(const Napi::CallbackInfo &info) {
       return info.Env().Undefined();
     }
 
+    if (info.Length() != 3) {
+      throw std::exception("Expected 3 parameters (container name, display name, description)");
+    }
+
     std::wstring containerName = toWC(info[0]);
     std::wstring displayName = toWC(info[1]);
     std::wstring description = toWC(info[2]);
-    PSID sid;
-    HRESULT res = UserEnv::instance().CreateAppContainerProfile(containerName.c_str(), displayName.c_str(), description.c_str(), nullptr, 0, &sid);
+
+    std::vector<SID_AND_ATTRIBUTES> capabilities;
+    for (auto id : { WinCapabilityPicturesLibrarySid }) {
+      PSID psid = HeapAlloc(GetProcessHeap(), 0, SECURITY_MAX_SID_SIZE);
+      if (psid == nullptr) {
+        throw std::runtime_error("alloc failed");
+      }
+      DWORD sidlistsize = SECURITY_MAX_SID_SIZE;
+      if (::CreateWellKnownSid(id, NULL, psid, &sidlistsize) != TRUE) {
+        HeapFree(GetProcessHeap(), 0, psid);
+        continue;
+      }
+      if (::IsWellKnownSid(psid, id) != TRUE) {
+        HeapFree(GetProcessHeap(), 0, psid);
+        continue;
+      }
+      SID_AND_ATTRIBUTES attr;
+      attr.Sid = psid;
+      attr.Attributes = SE_GROUP_ENABLED;
+      capabilities.push_back(attr);
+    }
+
+    PSID sid = nullptr;
+    HRESULT res = UserEnv::instance().CreateAppContainerProfile(
+      containerName.c_str(), displayName.c_str(), description.c_str(), capabilities.data(), capabilities.size(), &sid);
     ScopeGuard onExit([&]() { ::FreeSid(sid); });
+
     if (FAILED(res)) {
       if (HRESULT_CODE(res) == ERROR_ALREADY_EXISTS) {
         return info.Env().Undefined();
@@ -377,6 +406,10 @@ Napi::Value DeleteAppContainer(const Napi::CallbackInfo& info) {
   try {
     if (!UserEnv::instance().valid()) {
       return info.Env().Undefined();
+    }
+
+    if (info.Length() != 1) {
+      throw std::exception("Expected 1 parameter (container name)");
     }
 
     std::wstring containerName = toWC(info[0]);
@@ -424,9 +457,7 @@ public:
     DWORD readBytes = BUFSIZE;
     BOOL res;
 
-    bool running = true;
-
-    while (running) {
+    while (true) {
       memset(buf, '\0', BUFSIZE + 1);
       res = ::ReadFile(mStdOut, buf, BUFSIZE, &readBytes, nullptr);
       if (!res || (readBytes == 0)) {
@@ -458,11 +489,14 @@ private:
   HANDLE mStdOut;
 };
 
-
 Napi::Value RunInContainer(const Napi::CallbackInfo& info) {
   try {
+    if (info.Length() != 5) {
+      throw std::exception("Expected 5 parameters (container name, commandline, working directory, onexit callback, stdout callback)");
+    }
+
     std::wstring containerName = toWC(info[0]);
-    std::wstring processPath = toWC(info[1]);
+    std::wstring commandLine = toWC(info[1]);
     std::wstring cwdPath = toWC(info[2]);
     Napi::Function onExitCB = info[3].As<Napi::Function>();
     Napi::Function onStdoutCB = info[4].As<Napi::Function>();
@@ -499,10 +533,10 @@ Napi::Value RunInContainer(const Napi::CallbackInfo& info) {
     secAttr.bInheritHandle = TRUE;
     secAttr.lpSecurityDescriptor = nullptr;
 
-    HANDLE stdinR, stdinW, stdoutR, stdoutW, stderrR, stderrW;
+    HANDLE stdoutR, stdoutW;
 
-    checkedBool(::CreatePipe(&stdoutR, &stdoutW, &secAttr, 0), "CreatePipe", processPath.c_str());
-    checkedBool(::SetHandleInformation(stdoutR, HANDLE_FLAG_INHERIT, 0), "SetHandleInformation", processPath.c_str());
+    checkedBool(::CreatePipe(&stdoutR, &stdoutW, &secAttr, 0), "CreatePipe", commandLine.c_str());
+    checkedBool(::SetHandleInformation(stdoutR, HANDLE_FLAG_INHERIT, 0), "SetHandleInformation", commandLine.c_str());
 
     startupInfo.StartupInfo.hStdError = stdoutW;
     startupInfo.StartupInfo.hStdOutput = stdoutW;
@@ -518,10 +552,18 @@ Napi::Value RunInContainer(const Napi::CallbackInfo& info) {
 
     DWORD processFlags = CREATE_UNICODE_ENVIRONMENT | EXTENDED_STARTUPINFO_PRESENT;
 
-    checkedBool(::CreateProcessW(nullptr, processPath.data(), nullptr, nullptr, TRUE,
-      processFlags, nullptr, cwdPath.c_str(),
-      (LPSTARTUPINFOW)&startupInfo, &processInfo),
-      "CreateProcessW", processPath.c_str());
+    checkedBool(::CreateProcessW(
+      nullptr,
+      commandLine.data(),
+      nullptr,
+      nullptr,
+      TRUE,
+      processFlags,
+      nullptr,
+      cwdPath.c_str(),
+      (LPSTARTUPINFOW)&startupInfo,
+      &processInfo
+    ), "CreateProcessW", commandLine.c_str());
 
     // ::CloseHandle(processInfo.hProcess);
     ::CloseHandle(processInfo.hThread);
@@ -614,6 +656,10 @@ SE_OBJECT_TYPE typeFromName(const std::string& name) {
 
 Napi::Value GrantAppContainer(const Napi::CallbackInfo& info) {
   try {
+    if (info.Length() != 4) {
+      throw std::exception("Expected 4 parameters (container, object, type, permissions)");
+    }
+
     std::wstring containerName = toWC(info[0]);
     std::wstring objectName = toWC(info[1]);
     std::string typeName = info[2].ToString();
@@ -650,6 +696,110 @@ Napi::Value GrantAppContainer(const Napi::CallbackInfo& info) {
   }
 }
 
+DWORD mapIntegrityLevel(const std::string &integrityName) {
+  static const std::unordered_map<std::string, DWORD> integrityMap{
+    { "untrusted", SECURITY_MANDATORY_UNTRUSTED_RID },
+    { "low", SECURITY_MANDATORY_LOW_RID }
+  };
+  auto iter = integrityMap.find(integrityName);
+  if (iter == integrityMap.end()) {
+    throw std::exception("invalid integrity level");
+  }
+  return iter->second;
+}
+
+Napi::Value CreateProcessWithIntegrity(const Napi::CallbackInfo& info) {
+  try {
+    if (info.Length() != 5) {
+      throw std::exception("Expected 5 parameters (commandline, working directory, integrity level, onexit callback, stdout callback)");
+    }
+
+    std::wstring commandLine = toWC(info[0]);
+    std::wstring cwdPath = toWC(info[1]);
+    std::string integrityName = info[2].ToString();
+    Napi::Function onExitCB = info[3].As<Napi::Function>();
+    Napi::Function onStdoutCB = info[4].As<Napi::Function>();
+
+    SID_IDENTIFIER_AUTHORITY authority = SECURITY_MANDATORY_LABEL_AUTHORITY;
+
+    PSID integrityLevel;
+    checkedBool(::AllocateAndInitializeSid(
+      &authority,
+      1,
+      mapIntegrityLevel(integrityName),
+      0, 0, 0, 0, 0, 0, 0,
+      &integrityLevel), "AllocateAndInitializeSid", nullptr);
+
+    HANDLE token, newToken;
+    checkedBool(::OpenProcessToken(::GetCurrentProcess(), MAXIMUM_ALLOWED, &token), "OpenProcessToken", nullptr);
+    ScopeGuard onExit1([&]() { ::CloseHandle(token); });
+
+    checkedBool(::DuplicateTokenEx(token, MAXIMUM_ALLOWED, nullptr, SecurityImpersonation,
+      TokenPrimary, &newToken), "DuplicateTokenEx", nullptr);
+    ScopeGuard onExit2([&]() { ::CloseHandle(newToken); });
+
+    TOKEN_MANDATORY_LABEL tml = { 0 };
+    tml.Label.Attributes = SE_GROUP_INTEGRITY;
+    tml.Label.Sid = integrityLevel;
+
+    checkedBool(::SetTokenInformation(newToken, TokenIntegrityLevel, &tml,
+      sizeof(TOKEN_MANDATORY_LABEL) + ::GetLengthSid(integrityLevel)), "SetTokenInformation", nullptr);
+
+    STARTUPINFOEX startupInfo = { sizeof(startupInfo) };
+    /*
+    STARTUPINFOW startupInfo;
+    ZeroMemory(&startupInfo, sizeof(STARTUPINFOW));
+    startupInfo.cb = sizeof(STARTUPINFOW);
+    */
+
+    PROCESS_INFORMATION processInfo = { 0 };
+
+    SECURITY_ATTRIBUTES secAttr;
+    ::ZeroMemory(&secAttr, sizeof(secAttr));
+    secAttr.nLength = sizeof(SECURITY_ATTRIBUTES);
+    secAttr.bInheritHandle = TRUE;
+    secAttr.lpSecurityDescriptor = nullptr;
+
+    HANDLE stdoutR, stdoutW;
+
+    checkedBool(::CreatePipe(&stdoutR, &stdoutW, &secAttr, 0), "CreatePipe", commandLine.c_str());
+    checkedBool(::SetHandleInformation(stdoutR, HANDLE_FLAG_INHERIT, 0), "SetHandleInformation", commandLine.c_str());
+
+    startupInfo.StartupInfo.hStdError = stdoutW;
+    startupInfo.StartupInfo.hStdOutput = stdoutW;
+    startupInfo.StartupInfo.dwFlags |= STARTF_USESTDHANDLES;
+
+    DWORD processFlags = CREATE_UNICODE_ENVIRONMENT | EXTENDED_STARTUPINFO_PRESENT;
+
+    checkedBool(::CreateProcessAsUserW(
+      newToken,
+      nullptr,
+      commandLine.data(),
+      nullptr,
+      nullptr,
+      TRUE,
+      processFlags,
+      nullptr,
+      cwdPath.c_str(),
+      (LPSTARTUPINFOW) &startupInfo,
+      &processInfo
+    ), "CreateProcessAsUser", commandLine.c_str());
+
+    ::CloseHandle(processInfo.hThread);
+    ::CloseHandle(stdoutW);
+    // ::CloseHandle(processInfo.hProcess);
+    stdoutW = nullptr;
+
+    auto worker = new ProcessMonitor(onExitCB, onStdoutCB, processInfo.hProcess, stdoutR);
+    worker->Queue();
+
+    return Napi::Number::From(info.Env(), processInfo.dwProcessId);
+  }
+  catch (const std::exception &e) {
+    return Rethrow(info.Env(), e);
+  }
+}
+
 namespace Processes {
   void Init(Napi::Env env, Napi::Object exports) {
     exports.Set("GetProcessList", Napi::Function::New(env, GetProcessListWrap));
@@ -669,5 +819,6 @@ namespace Processes {
     exports.Set("DeleteAppContainer", Napi::Function::New(env, DeleteAppContainer));
     exports.Set("GrantAppContainer", Napi::Function::New(env, GrantAppContainer));
     exports.Set("RunInContainer", Napi::Function::New(env, RunInContainer));
+    exports.Set("CreateProcessWithIntegrity", Napi::Function::New(env, CreateProcessWithIntegrity));
   }
 }

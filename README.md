@@ -49,6 +49,7 @@ Processes
 - GetProcessToken (wrapper for OpenProcessToken, very limited)
 - GetProcessWindowList (return HWND all windows of a process)
 - SetForegroundWindow
+- CreateProcessIntegrity (run a process with reduced integrity level)
 
 Permissions (these are much higher abstractions than usual)
 - AddFileACE

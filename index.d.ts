@@ -516,10 +516,20 @@ export function GrantAppContainer(containerName: string, objectName: string, typ
 /**
  * Run a process inside an app container
  * @param containerName id of the container
- * @param processPath path of the executable to run
+ * @param commandLine the command line to run
  * @param cwdPath current working directory for the process
  * @param onExit event triggered when the process ends
  * @param onStdOut event triggered when the process outputs to stdout *or stderr*. At this time there is no way
  *                 to distinguish between stdout and stderr
  */
-export function RunInContainer(containerName: string, processPath: string, cwdPath: string, onExit: (code: number) => void, onStdOut: (message: string) => void);
+export function RunInContainer(containerName: string, commandLine: string, cwdPath: string, onExit: (code: number) => void, onStdOut: (message: string) => void);
+/**
+ * Run a process with reduced process integrity
+ * @param commandLine the command line to run
+ * @param cwdPath current working directory for the process
+ * @param integrity the integrity level to use (currently only allows "untrusted" and "low"
+ * @param onExit event triggered when the process ends
+ * @param onStdOut event triggered when the process outputs to stdout *or stderr*. At this time there is no way
+ *                 to distinguish between stdout and stderr
+ */
+export function CreateProcessWithIntegrity(commandLine: string, cwdPath: string, integrity: 'untrusted' | 'low', onExit: (code: number) => void, onStdOut: (message: string) => void);
