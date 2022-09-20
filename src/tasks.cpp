@@ -1,13 +1,14 @@
-#include "Tasks.h"
+#include "tasks.h"
 #include "util.h"
+#ifdef _WIN32
+#include <atlbase.h>
+#include <comdef.h>
 #include <taskschd.h>
 #include <windows.h>
-#include <atlbase.h>
-#include <unordered_map>
-#include <comdef.h>
-
 #pragma comment(lib, "taskschd.lib")
-
+#endif
+#include <unordered_map>
+#ifdef _WIN32
 ITaskService *getScheduler(const Napi::Env &env) {
   ITaskService *sched;
   HRESULT res = CoCreateInstance(CLSID_TaskScheduler,
@@ -106,7 +107,7 @@ TASK_RUNLEVEL_TYPE convRunLevel(const Napi::Env &env, const Napi::Value &input) 
     return TASK_RUNLEVEL_LUA;
   }
 }
-
+#endif
 Napi::Object getObject(const Napi::Env &env, const Napi::Object &obj, const char *key) {
   Napi::Value temp = obj.Get(key);
   if (temp.IsNull() || temp.IsUndefined()) {
@@ -122,9 +123,9 @@ bool toBool(const Napi::Env &env, const Napi::Value &input) {
 Napi::Value CreateTaskWrap(const Napi::CallbackInfo &info) {
   try {
     if (info.Length() != 2) {
-      throw std::runtime_error("Expected 2 parameters (task name, task settings)");
+      throw Napi::Error::New(info.Env(), "Expected 2 parameters (task name, task settings)");
     }
-
+    #ifdef _WIN32
     clean_ptr<ITaskService> sched(getScheduler(info.Env()),
       [](ITaskService *ptr) { ptr->Release(); });
 
@@ -219,7 +220,7 @@ Napi::Value CreateTaskWrap(const Napi::CallbackInfo &info) {
         _variant_t(userName.c_str()), _variant_t(), TASK_LOGON_NONE, _variant_t(L""), out);
       }, "ITaskFolder::RegisterTaskDefinition")) {
     }
-
+    #endif
     return info.Env().Undefined();
   }
   catch (const std::exception &e) {
@@ -228,13 +229,15 @@ Napi::Value CreateTaskWrap(const Napi::CallbackInfo &info) {
 }
 
 Napi::Value GetTasksWrap(const Napi::CallbackInfo &info) {
+  #ifdef _WIN32
   static const int TASKS_TO_RETRIEVE = 5;
+  #endif
 
   try {
     if (info.Length() > 1) {
-      throw std::runtime_error("Expected zero or one parameters (if set, the specified folder will be listed instead of the rrot)");
+      throw Napi::Error::New(info.Env(), "Expected zero or one parameters (if set, the specified folder will be listed instead of the rrot)");
     }
-
+    #ifdef _WIN32
     clean_ptr<ITaskService> sched(getScheduler(info.Env()), [](ITaskService *ptr) { ptr->Release(); });
     if (sched == nullptr) {
       return info.Env().Undefined();
@@ -276,8 +279,10 @@ Napi::Value GetTasksWrap(const Napi::CallbackInfo &info) {
         result.Set(resultIdx++, item);
       }
     }
-
     return result;
+    #else
+    return info.Env().Undefined();
+    #endif
   }
   catch (const std::exception &e) {
     return Rethrow(info.Env(), e);
@@ -285,14 +290,16 @@ Napi::Value GetTasksWrap(const Napi::CallbackInfo &info) {
 }
 
 Napi::Value DeleteTaskWrap(const Napi::CallbackInfo &info) {
+  #ifdef _WIN32
   static const int TASKS_TO_RETRIEVE = 5;
+  #endif
 
   try {
 
     if (info.Length() != 1) {
-      throw std::runtime_error("Expected 1 parameter (the task name)");
+      throw Napi::Error::New(info.Env(), "Expected 1 parameter (the task name)");
     }
-
+    #ifdef _WIN32
     clean_ptr<ITaskService> sched(getScheduler(info.Env()), [](ITaskService *ptr) { ptr->Release(); });
 
     if (sched == nullptr) {
@@ -313,7 +320,7 @@ Napi::Value DeleteTaskWrap(const Napi::CallbackInfo &info) {
     if (FAILED(res)) {
       return ThrowHResultException(info.Env(), res, "ITaskFolder::Delete");
     }
-
+    #endif
     return info.Env().Undefined();
   }
   catch (const std::exception &e) {
@@ -321,6 +328,7 @@ Napi::Value DeleteTaskWrap(const Napi::CallbackInfo &info) {
   }
 }
 
+#ifdef _WIN32
 void withTask(const Napi::Env &env, const std::wstring &taskName, std::function<void(IRegisteredTask *)> cb) {
   clean_ptr<ITaskService> sched(getScheduler(env), [](ITaskService *ptr) { ptr->Release(); });
   if (sched == nullptr) {
@@ -343,13 +351,15 @@ void withTask(const Napi::Env &env, const std::wstring &taskName, std::function<
 
   cb(task.get());
 }
+#endif
 
 Napi::Value RunTaskWrap(const Napi::CallbackInfo &info) {
   try {
     if (info.Length() != 1) {
-      throw std::runtime_error("Expected 1 parameter (the task name)");
+      throw Napi::Error::New(info.Env(), "Expected 1 parameter (the task name)");
     }
 
+    #ifdef _WIN32
     Napi::Env env = info.Env();
     std::wstring taskName = toWC(info[0]);
     withTask(env, taskName, [env](IRegisteredTask *task) {
@@ -358,7 +368,8 @@ Napi::Value RunTaskWrap(const Napi::CallbackInfo &info) {
         return task->Run(CComVariant(), out);
         }, "IRegisteredTask::Run")) {
       }
-      });
+    });
+    #endif
 
     return info.Env().Undefined();
   }
@@ -370,9 +381,10 @@ Napi::Value RunTaskWrap(const Napi::CallbackInfo &info) {
 Napi::Value StopTaskWrap(const Napi::CallbackInfo &info) {
   try {
     if (info.Length() != 1) {
-      throw std::runtime_error("Expected 1 parameter (the task name)");
+      throw Napi::Error::New(info.Env(), "Expected 1 parameter (the task name)");
     }
 
+    #ifdef _WIN32
     Napi::Env env = info.Env();
     std::wstring taskName = toWC(info[0]);
     withTask(env, taskName, [env](IRegisteredTask *task) {
@@ -382,7 +394,8 @@ Napi::Value StopTaskWrap(const Napi::CallbackInfo &info) {
         }, "IRegisteredTask::Stop")) {
         return;
       }
-      });
+    });
+    #endif
     return info.Env().Undefined();
   }
   catch (const std::exception &e) {

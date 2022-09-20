@@ -1,12 +1,13 @@
+#ifdef WIN32
 #include <windows.h>
 #include <string>
 #include <vector>
 #include <iostream>
 #include <set>
 
-#include "./walk.h"
-#include "./string_cast.h"
-#include "./UnicodeString.h"
+#include "walk.h"
+#include "string_cast.h"
+#include "UnicodeString.h"
 #include "scopeguard.hpp"
 #include "util.h"
 
@@ -334,3 +335,4 @@ void walk(const std::wstring &basePath,
     cb(res);
   }
 }
+#endif

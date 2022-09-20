@@ -1,17 +1,20 @@
+#ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <aclapi.h>
 #include <Sddl.h>
+#include <ntsecapi.h>
+#endif
 #include <string>
 #include <vector>
 #include <functional>
 #include <napi.h>
-#include <ntsecapi.h>
 
 #include "scopeguard.hpp"
 #include "string_cast.h"
 #include "util.h"
 
+#ifdef _WIN32
 WELL_KNOWN_SID_TYPE translateGroup(const std::string& group) {
   if (group == "everyone") {
     return WinAuthenticatedUserSid;
@@ -353,19 +356,19 @@ std::string getSidImpl() {
   auto user = getCurrentUser();
   return sidToString(user->User.Sid);
 }
-
+#endif
 
 Napi::Value apply(const Napi::CallbackInfo& info) {
   try {
     if (info.Length() != 2) {
-      throw std::runtime_error("Expected parameters (access, path)");
+      throw Napi::Error::New(info.Env(), "Expected parameters (access, path)");
     }
-
+    #ifdef _WIN32
     Napi::Object access = info[0].ToObject();
     std::string path(info[1].ToString());
 
     applyImpl(*Napi::ObjectWrap<AccessWrap>::Unwrap(access)->get(), path);
-
+    #endif
     return info.Env().Undefined();
   }
   catch (const std::exception& e) {
@@ -375,13 +378,18 @@ Napi::Value apply(const Napi::CallbackInfo& info) {
 
 Napi::Value getSid(const Napi::CallbackInfo &info) {
   try {
+    #ifdef _WIN32
     return Napi::String::New(info.Env(), getSidImpl().c_str());
+    #else
+    return info.Env().Undefined();
+    #endif
   }
   catch (const std::exception& e) {
     return Rethrow(info.Env(), e);
   }
 }
 
+#ifdef _WIN32
 LSA_HANDLE GetLocalPolicyHandle(ACCESS_MASK access)
 {
   LSA_OBJECT_ATTRIBUTES ObjectAttributes;
@@ -401,13 +409,14 @@ LSA_HANDLE GetLocalPolicyHandle(ACCESS_MASK access)
   }
   return handle;
 }
+#endif
 
 Napi::Value checkYourPrivilege(const Napi::CallbackInfo &info) {
   try {
     if (info.Length() != 0) {
-      throw std::runtime_error("Expected no parameters");
+      throw Napi::Error::New(info.Env(), "Expected no parameters");
     }
-
+    #ifdef _WIN32
     TokenInformation<TOKEN_PRIVILEGES> priv(TokenPrivileges);
 
     // this should be more than enough
@@ -424,6 +433,9 @@ Napi::Value checkYourPrivilege(const Napi::CallbackInfo &info) {
     }
 
     return result;
+    #else
+    return info.Env().Undefined();
+    #endif
   }
   catch (const std::exception& e) {
     return Rethrow(info.Env(), e);
@@ -433,9 +445,9 @@ Napi::Value checkYourPrivilege(const Napi::CallbackInfo &info) {
 Napi::Value getUserPrivilege(const Napi::CallbackInfo& info) {
   try {
     if (info.Length() != 1) {
-      throw std::runtime_error("Expected one parameter (sid)");
+      throw Napi::Error::New(info.Env(), "Expected one parameter (sid)");
     }
-
+    #ifdef _WIN32
     PSID sid = convertSID(info[0].ToString());
 
     PLSA_UNICODE_STRING rights;
@@ -468,6 +480,9 @@ Napi::Value getUserPrivilege(const Napi::CallbackInfo& info) {
     }
 
     return result;
+    #else
+    return info.Env().Undefined();
+    #endif
   }
   catch (const std::exception& e) {
     return Rethrow(info.Env(), e);
@@ -477,9 +492,9 @@ Napi::Value getUserPrivilege(const Napi::CallbackInfo& info) {
 Napi::Value addUserPrivilege(const Napi::CallbackInfo & info) {
   try {
     if (info.Length() != 2) {
-      throw std::runtime_error("Expected two parameters (sid, privilege)");
+      throw Napi::Error::New(info.Env(), "Expected two parameters (sid, privilege)");
     }
-
+    #ifdef _WIN32
     PSID sid = convertSID(info[0].ToString());
 
     LSA_HANDLE policy = ::GetLocalPolicyHandle(POLICY_VIEW_LOCAL_INFORMATION | POLICY_LOOKUP_NAMES | POLICY_WRITE);
@@ -498,7 +513,7 @@ Napi::Value addUserPrivilege(const Napi::CallbackInfo & info) {
     if (res != ERROR_SUCCESS) {
       throw WinApiException(::LsaNtStatusToWinError(res), "LsaEnumerateAccountRight");
     }
-
+    #endif
     return info.Env().Undefined();
   }
   catch (const std::exception& e) {
@@ -509,9 +524,9 @@ Napi::Value addUserPrivilege(const Napi::CallbackInfo & info) {
 Napi::Value removeUserPrivilege(const Napi::CallbackInfo & info) {
   try {
     if (info.Length() != 2) {
-      throw std::runtime_error("Expected two parameters (sid, privilege)");
+      throw Napi::Error::New(info.Env(), "Expected two parameters (sid, privilege)");
     }
-
+    #ifdef _WIN32
     PSID sid = convertSID(info[0].ToString());
 
     LSA_HANDLE policy = GetLocalPolicyHandle(POLICY_VIEW_LOCAL_INFORMATION | POLICY_LOOKUP_NAMES | POLICY_WRITE);
@@ -530,7 +545,7 @@ Napi::Value removeUserPrivilege(const Napi::CallbackInfo & info) {
     if (res != ERROR_SUCCESS) {
       throw WinApiException(::LsaNtStatusToWinError(res), "LsaEnumerateAccountRight");
     }
-
+    #endif
     return info.Env().Undefined();
   }
   catch (const std::exception& e) {
@@ -541,9 +556,9 @@ Napi::Value removeUserPrivilege(const Napi::CallbackInfo & info) {
 Napi::Value lookupAccountName(const Napi::CallbackInfo& info) {
   try {
     if (info.Length() != 1) {
-      throw std::runtime_error("Expected two parameters (account)");
+      throw Napi::Error::New(info.Env(), "Expected two parameters (account)");
     }
-
+    #ifdef _WIN32
     std::wstring account = toWC(info[0]);
 
     SID sid;
@@ -563,6 +578,9 @@ Napi::Value lookupAccountName(const Napi::CallbackInfo& info) {
     checkedBool(ConvertSidToStringSid(&sid, &stringSid), "ConvertSidToStringSid", nullptr);
 
     return Napi::String::New(info.Env(), toMB(stringSid, CodePage::UTF8, wcslen(stringSid)));
+    #else
+    return info.Env().Undefined();
+    #endif
   } catch (const std::exception& e) {
       return Rethrow(info.Env(), e);
     }
@@ -570,8 +588,9 @@ Napi::Value lookupAccountName(const Napi::CallbackInfo& info) {
 
 namespace Permissions {
   void Init(Napi::Env env, Napi::Object exports) {
+    #ifdef _WIN32
     AccessWrap::Init(env, exports);
-
+    #endif
     exports.Set("AddFileACE", Napi::Function::New(env, apply));
     exports.Set("GetUserSID", Napi::Function::New(env, getSid));
     exports.Set("LookupAccountName", Napi::Function::New(env, lookupAccountName));

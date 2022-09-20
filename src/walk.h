@@ -1,5 +1,5 @@
 #pragma once
-
+#ifdef _WIN32
 #include <string>
 #include <vector>
 #include <functional>
@@ -30,3 +30,4 @@ struct WalkOptions {
 void walk(const std::wstring &basePath,
           std::function<bool(const std::vector<Entry> &results)> cb,
           const WalkOptions &options);
+#endif

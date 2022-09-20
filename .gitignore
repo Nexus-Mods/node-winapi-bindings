@@ -1,4 +1,4 @@
-node_modules
-auto-top.gypi
-auto.gypi
+.cache
 build
+node_modules
+prebuilds

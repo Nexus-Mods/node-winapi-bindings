@@ -8,25 +8,27 @@
     "url": "https://github.com/Nexus-Mods/node-winapi-bindings.git"
   },
   "scripts": {
-    "savepdb": "cross-var shx cp build/Release/winapi.pdb pdbs/winapi.$npm_package_version.pdb",
-    "prebuild": "prebuild.cmd -r napi -t 4 -a x64 --prepack codesign",
-    "preinstall": "autogypi",
-    "install": "prebuild-install -r napi -t 4 -a x64 || node-gyp rebuild"
+    "install": "prebuild-install.cmd -r napi -t 4 -a x64 || prebuild-install -r napi -t 4 -a x64",
+    "developer": "cmake-js.cmd compile || cmake-js compile",
+    "devbuild": "prebuild.cmd -r napi -t 4 -a x64 --backend cmake-js || prebuild -r napi -t 4 -a x64 --backend cmake-js",
+    "prebuild": "prebuild.cmd -r napi -t 4 -a x64 --prepack codesign --backend cmake-js || prebuild -r napi -t 4 -a x64 --prepack codesign --backend cmake-js",
+    "savepdb": "cross-var shx cp build/Release/winapi.pdb pdbs/winapi.$npm_package_version.pdb"
   },
   "binary": {
-    "napi_versions": [4]
+    "napi_versions": [
+      4
+    ]
   },
   "author": "Black Tree Gaming Ltd",
   "license": "GPL-3.0",
   "devDependencies": {
+    "cmake-js": "^6.3.2",
     "cross-var": "^1.1.0",
+    "node-addon-api": "^5.0.0",
     "prebuild": "^11.0.3",
     "shx": "^0.3.4"
   },
   "dependencies": {
-    "autogypi": "^0.2.2",
-    "node-addon-api": "^3.1.0",
-    "node-gyp": "^9.0.0",
     "prebuild-install": "7.1.0"
   }
 }

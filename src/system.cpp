@@ -1,23 +1,25 @@
-#include <windows.h>
 #include <napi.h>
 #include "scopeguard.hpp"
 #include "string_cast.h"
 #include "util.h"
-
+#ifdef _WIN32
+#include <windows.h>
 #pragma comment( lib, "advapi32.lib" )
+#endif
+
 
 Napi::Value InitiateSystemShutdownWrap(const Napi::CallbackInfo &info)
 {
   try {
     if (info.Length() != 4) {
-      throw std::exception("Expected four parameters (message, timeout, askToClose, reboot)");
+      throw Napi::Error::New(info.Env(), "Expected four parameters (message, timeout, askToClose, reboot)");
     }
 
+    #ifdef _WIN32
     std::string msg = info[0].ToString().Utf8Value();
     int timeout = info[1].ToNumber();
     bool askToClose = info[2].ToBoolean();
     bool reboot = info[3].ToBoolean();
-
     HANDLE processToken;
 
     if (!::OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &processToken)) {
@@ -49,7 +51,11 @@ Napi::Value InitiateSystemShutdownWrap(const Napi::CallbackInfo &info)
       }
       throw WinApiException(::GetLastError(), "InitiateSystemShutdown");
     }
+
     return Napi::Boolean::New(info.Env(), true);
+    #else
+    return info.Env().Undefined();
+    #endif
   }
   catch (const std::exception &e) {
     return Rethrow(info.Env(), e);
@@ -59,6 +65,7 @@ Napi::Value InitiateSystemShutdownWrap(const Napi::CallbackInfo &info)
 Napi::Value AbortSystemShutdownWrap(const Napi::CallbackInfo &info)
 {
   try {
+    #ifdef _WIN32
     HANDLE processToken;
 
     BOOL fResult;
@@ -92,6 +99,9 @@ Napi::Value AbortSystemShutdownWrap(const Napi::CallbackInfo &info)
       throw WinApiException(::GetLastError(), "AbortSystemShutdown");
     }
     return Napi::Boolean::New(info.Env(), true);
+    #else
+    return Napi::Boolean::New(info.Env(), false);
+    #endif
   }
   catch (const std::exception &e) {
     return Rethrow(info.Env(), e);

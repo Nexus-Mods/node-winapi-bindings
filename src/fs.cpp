@@ -1,8 +1,9 @@
 #include "fs.h"
 #include "util.h"
-#include <windows.h>
 #include <unordered_map>
 #include <cwchar>
+#ifdef _WIN32
+#include <windows.h>
 
 DWORD mapPermissions(const Napi::Array& input) {
   static const std::unordered_map<std::string, DWORD> permissionsMap{
@@ -61,13 +62,14 @@ DWORD mapAttributes(const Napi::Array &input) {
 
   return res;
 }
-
+#endif
 Napi::Value SetFileAttributesWrap(const Napi::CallbackInfo &info) {
   try {
     if (info.Length() != 2) {
-      throw std::runtime_error("Expected two parameters (path, attributes)");
+      throw Napi::Error::New(info.Env(), "Expected two parameters (path, attributes)");
     }
 
+    #ifdef _WIN32
     std::string pathU8 = info[0].ToString();
     std::wstring path = toWC(pathU8.c_str(), CodePage::UTF8, pathU8.length());
     Napi::Array attributes = info[1].As<Napi::Array>();
@@ -76,6 +78,7 @@ Napi::Value SetFileAttributesWrap(const Napi::CallbackInfo &info) {
       throw WinApiException(::GetLastError(), "SetFileAttributes", pathU8.c_str());
     }
 
+    #endif
     return info.Env().Undefined();
   }
   catch (const std::exception &e) {
@@ -87,9 +90,9 @@ Napi::Value GetDiskFreeSpaceExWrap(const Napi::CallbackInfo &info) {
 
   try {
     if (info.Length() != 1) {
-      throw std::runtime_error("Expected one parameter (path)");
+      throw Napi::Error::New(info.Env(), "Expected one parameter (path)");
     }
-
+    #ifdef _WIN32
     std::string pathU8 = info[0].ToString();
     std::wstring path = toWC(pathU8.c_str(), CodePage::UTF8, pathU8.length());
 
@@ -110,6 +113,9 @@ Napi::Value GetDiskFreeSpaceExWrap(const Napi::CallbackInfo &info) {
     result.Set("freeToCaller", Napi::Number::New(info.Env(), static_cast<double>(freeBytesAvailableToCaller.QuadPart)));
 
     return result;
+    #else
+    return info.Env().Undefined();
+    #endif
   }
   catch (const std::exception &e) {
     return Rethrow(info.Env(), e);
@@ -119,23 +125,27 @@ Napi::Value GetDiskFreeSpaceExWrap(const Napi::CallbackInfo &info) {
 Napi::Value GetVolumePathNameWrap(const Napi::CallbackInfo &info) {
   try {
     if (info.Length() != 1) {
-      throw std::runtime_error("Expected one parameter (path)");
+      throw Napi::Error::New(info.Env(), "Expected one parameter (path)");
     }
 
+    #ifdef _WIN32
     std::wstring path = toWC(info[0]);
-
     wchar_t buffer[MAX_PATH];
     if (!::GetVolumePathNameW(path.c_str(), buffer, MAX_PATH)) {
       throw WinApiException(::GetLastError(), "GetDiskFreeSpaceEx", toMB(path.c_str(), CodePage::UTF8, path.length()).c_str());
     }
 
     return Napi::String::New(info.Env(), toMB(buffer, CodePage::UTF8, (std::numeric_limits<size_t>::max)()));
+    #else
+    return info.Env().Undefined();
+    #endif
   }
   catch (const std::exception &e) {
     return Rethrow(info.Env(), e);
   }
 }
 
+#ifdef _WIN32
 const char *fileType(DWORD type) {
   switch (type) {
    case VFT_APP: return "app";
@@ -156,13 +166,15 @@ std::wstring mysprintf(const wchar_t *format, Args && ...args)
     std::swprintf(&output[0], format, std::forward<Args>(args)...);
     return output;
 }
+#endif
 
 Napi::Value GetFileVersionInfoWrap(const Napi::CallbackInfo &info) {
   try {
     if (info.Length() != 1) {
-      throw std::exception("Expected 1 parameter (filePath)");
+      throw Napi::Error::New(info.Env(), "Expected 1 parameter (filePath)");
     }
 
+    #ifdef _WIN32
     std::wstring executablePath = toWC(info[0]);
 
     DWORD handle;
@@ -183,6 +195,7 @@ Napi::Value GetFileVersionInfoWrap(const Napi::CallbackInfo &info) {
     }
 
     Napi::Object res = Napi::Object::New(info.Env());
+
     { // language neutral file version
       Napi::Array version = Napi::Array::New(info.Env());
       version.Set(0U, Napi::Number::New(info.Env(), HIWORD(fileInfo->dwFileVersionMS)));
@@ -259,6 +272,9 @@ Napi::Value GetFileVersionInfoWrap(const Napi::CallbackInfo &info) {
     // DWORD   dwFileSubtype;          /* e.g. VFT2_DRV_KEYBOARD */
 
     return res;
+    #else
+    return info.Env().Undefined();
+    #endif
   }
   catch (const std::exception &e) {
     return Rethrow(info.Env(), e);

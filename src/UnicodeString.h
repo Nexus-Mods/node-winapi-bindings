@@ -1,4 +1,5 @@
 #pragma once
+#ifdef _WIN32
 
 #include <sstream>
 #include <vector>
@@ -48,3 +49,4 @@ private:
   UNICODE_STRING m_Data;
   std::vector<wchar_t> m_Buffer;
 };
+#endif

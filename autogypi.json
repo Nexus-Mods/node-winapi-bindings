@@ -1,6 +1,0 @@
-{
-  "dependencies": [
-    "node-addon-api"
-  ],
-  "includes": []
-}

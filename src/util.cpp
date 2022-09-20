@@ -1,9 +1,16 @@
 #include "util.h"
+#ifdef _WIN32
 #include <comdef.h>
 
 std::wstring toWC(const Napi::Value & input) {
   std::string temp = input.ToString().Utf8Value();
-  return toWC(temp.c_str(), CodePage::UTF8, temp.length());
+  return toWC(
+    temp.c_str(),
+    #ifdef _WIN32
+    CodePage::UTF8,
+    #endif
+    temp.length()
+  );
 }
 
 Napi::Array convertMultiSZ(const Napi::Env &env, wchar_t *input, DWORD maxLength) {
@@ -15,7 +22,19 @@ Napi::Array convertMultiSZ(const Napi::Env &env, wchar_t *input, DWORD maxLength
   // the buffer, also verify we don't exceed the character count
   while ((*ptr != '\0') && ((ptr - start) < maxLength)) {
     size_t len = wcslen(ptr);
-    result.Set(idx++, Napi::String::New(env, toMB(ptr, CodePage::UTF8, len)));
+    result.Set(
+      idx++,
+      Napi::String::New(
+        env,
+        toMB(
+          ptr,
+          #ifdef _WIN32
+          CodePage::UTF8,
+          #endif
+          len
+        )
+      )
+    );
     ptr += len + 1;
   }
 
@@ -40,7 +59,13 @@ static std::string strerror(DWORD errorno) {
       errmsg[i] = '\0';
     }
 
-    return toMB(errmsg, CodePage::UTF8, len);
+    return toMB(
+      errmsg,
+      #ifdef _WIN32
+      CodePage::UTF8,
+      #endif
+      len
+    );
   }
   else {
     return "Unknown error";
@@ -215,7 +240,7 @@ Napi::Value ThrowHResultException(const Napi::Env &env, HRESULT hr, const char *
 
   if (s == napi_ok) {
     napi_set_property(env, err, Napi::String::New(env, "name"), Napi::String::New(env, "HResultException"));
-  
+
     napi_set_property(env, err, Napi::String::New(env, "code"), Napi::String::New(env, "UNKNOWN"));
     napi_set_property(env, err, Napi::String::New(env, "systemCode"), Napi::Number::New(env, hr & 0xFFFF));
     if (func != nullptr) {
@@ -226,7 +251,7 @@ Napi::Value ThrowHResultException(const Napi::Env &env, HRESULT hr, const char *
     }
     s = napi_throw(env, err);
   }
-  
+
   if (s != napi_ok) {
     // fallback
     napi_throw_error(env, "UNKNOWN", errMsgUtf8.c_str());
@@ -281,17 +306,20 @@ HResultException::HResultException(const HResultException &ref)
 const char *HResultException::what() const noexcept {
   return m_Message.c_str();
 }
+#endif
 
 Napi::Value Rethrow(const Napi::Env &env, const std::exception &e) {
   try {
     throw;
   }
+  #ifdef _WIN32
   catch (const WinApiException &e) {
     ThrowWinApiException(env, e.getCode(), e.getFunc(), e.getPath());
   }
   catch (const HResultException &e) {
     ThrowHResultException(env, e.getCode(), e.getFunc(), e.getPath());
   }
+  #endif
   catch (const Napi::Error &e) {
     e.ThrowAsJavaScriptException();
   }

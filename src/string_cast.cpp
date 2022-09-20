@@ -1,3 +1,4 @@
+#ifdef _WIN32
 #include "string_cast.h"
 #include <stdexcept>
 
@@ -69,3 +70,4 @@ std::string toMB(const wchar_t * const &source, CodePage codePage, size_t source
 
   return result;
 }
+#endif

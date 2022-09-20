@@ -1,6 +1,7 @@
 #include "shell.h"
 #include "util.h"
 #include <unordered_map>
+#ifdef _WIN32
 #include <windows.h>
 #include <tlhelp32.h>
 #include <shellapi.h>
@@ -190,13 +191,14 @@ uint32_t translateExecuteMask(const std::string &name) {
 
   return 0;
 }
+#endif
 
 Napi::Value SHGetKnownFolderPathWrap(const Napi::CallbackInfo &info) {
   try {
     if ((info.Length() < 1) || (info.Length() > 2)) {
-      throw std::exception("Expected 1-2 parameters (folderId, flag)");
+      throw Napi::Error::New(info.Env(), "Expected 1-2 parameters (folderId, flag)");
     }
-
+    #ifdef _WIN32
     KNOWNFOLDERID folder;
     DWORD flag = KF_FLAG_DEFAULT;
 
@@ -205,14 +207,14 @@ Napi::Value SHGetKnownFolderPathWrap(const Napi::CallbackInfo &info) {
       auto folderId = knownFolders.find(folderIdV8.c_str());
 
       if (folderId == knownFolders.end()) {
-        throw std::exception("Invalid folder id");
+        throw Napi::Error::New(info.Env(), "Invalid folder id");
       }
       folder = folderId->second;
     }
 
     if (info.Length() > 1) {
       if (!info[1].IsArray()) {
-        throw std::exception("Invalid flags, expected to be an array");
+        throw Napi::Error::New(info.Env(), "Invalid flags, expected to be an array");
       }
       Napi::Array flagList = info[1].As<Napi::Array>();
 
@@ -221,7 +223,7 @@ Napi::Value SHGetKnownFolderPathWrap(const Napi::CallbackInfo &info) {
 
         auto flagIter = knownFolderFlags.find(flagV8);
         if (flagIter == knownFolderFlags.end()) {
-          throw std::exception("Invalid folder flag");
+          throw Napi::Error::New(info.Env(), "Invalid folder flag");
         }
 
         if (flagIter != knownFolderFlags.end()) {
@@ -243,12 +245,16 @@ Napi::Value SHGetKnownFolderPathWrap(const Napi::CallbackInfo &info) {
     CoTaskMemFree(result);
 
     return ret;
+    #else
+    return info.Env().Undefined();
+    #endif
   }
   catch (const std::exception &err) {
     return Rethrow(info.Env(), err);
   }
 }
 
+#ifdef _WIN32
 static BOOL CALLBACK getWindowByProcess(HWND hwnd, LPARAM lParam)
 {
   WINDOWPROCESSINFO *infoPtr = (WINDOWPROCESSINFO *)lParam;
@@ -261,8 +267,10 @@ static BOOL CALLBACK getWindowByProcess(HWND hwnd, LPARAM lParam)
   }
   return true;
 }
+#endif
 
 Napi::Value ShellExecuteExWrap(const Napi::CallbackInfo &info) {
+  #ifdef _WIN32
   static const DWORD SW_FOREGROUND = SW_MAX + 1;
   static const std::unordered_map<std::string, DWORD> showFlagMap{
     {"hide", SW_HIDE},
@@ -278,10 +286,10 @@ Napi::Value ShellExecuteExWrap(const Napi::CallbackInfo &info) {
     {"shownormal", SW_SHOWNORMAL},
     {"foreground", SW_FOREGROUND}
   };
-
+  #endif
   try {
     if (info.Length() != 1) {
-      throw std::exception("Expected one parameter (options)");
+      throw Napi::Error::New(info.Env(), "Expected one parameter (options)");
     }
 
     Napi::Object args = info[0].ToObject();
@@ -291,9 +299,9 @@ Napi::Value ShellExecuteExWrap(const Napi::CallbackInfo &info) {
     };
 
     if (!hasArg("file") || !hasArg("show")) {
-      throw std::exception("Parameter missing (required: file, show)");
+      throw Napi::Error::New(info.Env(), "Parameter missing (required: file, show)");
     }
-
+    #ifdef _WIN32
     // important: has to be a container that doesn't invalidate iterators on insertion (like vector would)
     std::list<std::wstring> buffers;
 
@@ -367,6 +375,7 @@ Napi::Value ShellExecuteExWrap(const Napi::CallbackInfo &info) {
       }
       ::CloseHandle(execInfo.hProcess);
     }
+    #endif
     return info.Env().Undefined();
   }
   catch (const std::exception &e) {

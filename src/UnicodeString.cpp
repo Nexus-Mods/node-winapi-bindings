@@ -1,5 +1,5 @@
 #include "UnicodeString.h"
-
+#ifdef _WIN32
 UnicodeString::UnicodeString()
 {
   m_Data.Length = m_Data.MaximumLength = 0;
@@ -43,3 +43,4 @@ UnicodeString::operator PUNICODE_STRING() {
   m_Data.Buffer = &m_Buffer[0];
   return &m_Data;
 }
+#endif

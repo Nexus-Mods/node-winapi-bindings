@@ -1,13 +1,16 @@
 #include "ini.h"
 #include "util.h"
+#ifdef _WIN32
 #include <windows.h>
+#endif
 
 Napi::Value GetPrivateProfileSectionWrap(const Napi::CallbackInfo &info) {
   try {
     if (info.Length() != 2) {
-      throw std::runtime_error("Expected two parameters (section, fileName)");
+      throw Napi::Error::New(info.Env(), "Expected two parameters (section, fileName)");
     }
 
+    #ifdef _WIN32
     std::string appNameV8(info[0].ToString());
     std::string fileNameV8(info[1].ToString());
 
@@ -20,6 +23,7 @@ Napi::Value GetPrivateProfileSectionWrap(const Napi::CallbackInfo &info) {
     DWORD charCount = ::GetPrivateProfileSectionW(appName.c_str(), buffer.get(), size, fileName.c_str());
 
     Napi::Object result = Napi::Object::New(info.Env());
+
     wchar_t *start = buffer.get();
     wchar_t *ptr = start;
     // double check. the list is supposed to end on a double zero termination but to ensure we don't overrun
@@ -41,8 +45,10 @@ Napi::Value GetPrivateProfileSectionWrap(const Napi::CallbackInfo &info) {
         ptr += wcslen(ptr) + 1;
       }
     }
-
     return result;
+    #else
+    return info.Env().Undefined();
+    #endif
   }
   catch (const std::exception &e) {
     return Rethrow(info.Env(), e);
@@ -52,9 +58,10 @@ Napi::Value GetPrivateProfileSectionWrap(const Napi::CallbackInfo &info) {
 Napi::Value GetPrivateProfileSectionNamesWrap(const Napi::CallbackInfo &info) {
   try {
     if (info.Length() != 1) {
-      throw std::runtime_error("Expected one parameter (fileName)");
+      throw Napi::Error::New(info.Env(), "Expected one parameter (fileName)");
     }
 
+    #ifdef _WIN32
     std::string fileName = info[0].ToString();
 
     DWORD size = 32 * 1024;
@@ -64,6 +71,9 @@ Napi::Value GetPrivateProfileSectionNamesWrap(const Napi::CallbackInfo &info) {
       toWC(fileName.c_str(), CodePage::UTF8, fileName.length()).c_str());
 
     return convertMultiSZ(info.Env(), buffer.get(), charCount);
+    #else
+    return info.Env().Undefined();
+    #endif
   }
   catch (const std::exception &e) {
     return Rethrow(info.Env(), e);
@@ -73,9 +83,9 @@ Napi::Value GetPrivateProfileSectionNamesWrap(const Napi::CallbackInfo &info) {
 Napi::Value GetPrivateProfileStringWrap(const Napi::CallbackInfo &info) {
   try {
     if (info.Length() != 4) {
-      throw std::exception("Expected four parameters (section, key, default, fileName)");
+      throw Napi::Error::New(info.Env(), "Expected four parameters (section, key, default, fileName)");
     }
-
+    #ifdef _WIN32
     std::wstring appName = toWC(info[0]);
     std::wstring keyName = toWC(info[1]);
     std::wstring defaultValue = toWC(info[2]);
@@ -107,6 +117,9 @@ Napi::Value GetPrivateProfileStringWrap(const Napi::CallbackInfo &info) {
       }
     }
     return convertMultiSZ(info.Env(), buffer.get(), charCount);
+    #else
+    return info.Env().Undefined();
+    #endif
   }
   catch (const std::exception &e) {
     return Rethrow(info.Env(), e);
@@ -116,9 +129,9 @@ Napi::Value GetPrivateProfileStringWrap(const Napi::CallbackInfo &info) {
 Napi::Value WritePrivateProfileStringWrap(const Napi::CallbackInfo &info) {
   try {
     if (info.Length() != 4) {
-      throw std::exception("Expected four parameters (section, key, value, fileName)");
+      throw Napi::Error::New(info.Env(), "Expected four parameters (section, key, value, fileName)");
     }
-
+    #ifdef _WIN32
     std::string appNameV8(info[0].ToString());
     std::string keyNameV8(info[1].ToString());
     std::string valueV8(info[2].ToString());
@@ -135,6 +148,7 @@ Napi::Value WritePrivateProfileStringWrap(const Napi::CallbackInfo &info) {
     if (!res) {
       return ThrowWinApiException(info.Env(), ::GetLastError(), "WritePrivateProfileString", fileNameV8.c_str());
     }
+    #endif
     return info.Env().Undefined();
   }
   catch (const std::exception &e) {

@@ -2,27 +2,36 @@
 #include "util.h"
 #include "scopeguard.hpp"
 #include "walk.h"
+#ifdef _WIN32
 #include <windows.h>
 #include <restartmanager.h>
-
 #pragma comment(lib, "Rstrtmgr.lib")
+#endif
+
 
 Napi::Value IsThisWineWrap(const Napi::CallbackInfo &info) {
+  #ifdef _WIN32 // this could be wine
   HMODULE ntdll = LoadLibrary(TEXT("ntdll.dll"));
   FARPROC addr = GetProcAddress(ntdll, "wine_get_version");
-
+  #else // this cannot be wine
+  const auto addr = nullptr; // must return false
+  #endif
   return Napi::Boolean::New(info.Env(), addr != nullptr);
 }
 
+#ifdef _WIN32
 struct Process {
+  #ifdef _WIN32
   DWORD pid;
+  #else
+  pid_t pid;
+  #endif
   std::wstring appName;
 };
 
 std::vector<Process> WhoIsLocking(const std::string &path)
 {
   std::vector<Process> result;
-
   DWORD handle;
   WCHAR sessionKey[CCH_RM_SESSION_KEY + 1] = { 0 };
   DWORD res = RmStartSession(&handle, 0, sessionKey);
@@ -69,7 +78,6 @@ std::vector<Process> WhoIsLocking(const std::string &path)
     Process proc = { info[i].Process.dwProcessId, info[i].strAppName };
     result.push_back(proc);
   }
-
   return result;
 }
 
@@ -79,13 +87,13 @@ Napi::Object convert(const Napi::Env &env, const Process &proc) {
   result.Set("pid", Napi::Number::New(env, proc.pid));
   return result;
 }
-
+#endif
 Napi::Value WhoLocks(const Napi::CallbackInfo &info) {
   try {
     if (info.Length() != 1) {
-      throw std::exception("Expected 1 parameter (filePath)");
+      throw Napi::Error::New(info.Env(), "Expected 1 parameter (filePath)");
     }
-
+    #ifdef _WIN32
     std::string path(info[0].ToString());
 
 
@@ -95,12 +103,15 @@ Napi::Value WhoLocks(const Napi::CallbackInfo &info) {
       retValue.Set(i, convert(info.Env(), processes[i]));
     }
     return retValue;
+    #else
+    return info.Env().Undefined();
+    #endif
   }
   catch (const std::exception &err) {
     return Rethrow(info.Env(), err);
   }
 }
-
+#ifdef _WIN32
 bool get(const Napi::Object &obj, const char* key, const bool &def) {
   return obj.Has(key)
     ? obj.Get(key).As<Napi::Boolean>()
@@ -165,12 +176,14 @@ public:
         return !mCancelled;
         }, mOptions);
     }
+    #ifdef _WIN32
     catch (const WinApiException& e) {
       mErrorCode = e.getCode();
       mErrorFunc = e.getFunc();
       mErrorPath = e.getPath();
       SetError(e.what());
     }
+    #endif
     catch (const std::exception& e) {
       SetError(e.what());
     }
@@ -209,13 +222,14 @@ private:
   std::string mErrorFunc;
   std::string mErrorPath;
 };
+#endif
 
 Napi::Value WalkDir(const Napi::CallbackInfo& info) {
   try {
     if ((info.Length() < 3) || (info.Length() > 4)) {
-      throw std::exception("Expected 3 or 4 arguments (searchPath, progressCB, options?, resultsCB)");
+      throw Napi::Error::New(info.Env(), "Expected 3 or 4 arguments (searchPath, progressCB, options?, resultsCB)");
     }
-
+    #ifdef _WIN32
     WalkOptions options;
     if (info.Length() > 3) {
       Napi::Object optionsIn = info[2].ToObject();
@@ -234,6 +248,7 @@ Napi::Value WalkDir(const Napi::CallbackInfo& info) {
     auto worker = new WalkWorker(callback, progress, toWC(info[0]), options);
 
     worker->Queue();
+    #endif
     return info.Env().Undefined();
   }
   catch (const std::exception& err) {

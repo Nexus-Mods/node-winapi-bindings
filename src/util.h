@@ -1,6 +1,7 @@
 #include "string_cast.h"
 #include <napi.h>
 
+#ifdef _WIN32
 class WinApiException : public std::exception {
 public:
   WinApiException(DWORD code, const char *func, const char *path = nullptr);
@@ -28,6 +29,7 @@ private:
   std::string m_Func;
   std::string m_Path;
 };
+
 
 class HResultException : public std::exception {
 public:
@@ -94,9 +96,10 @@ napi_value MakeWinApiException(const Napi::Env& env, DWORD lastError, const char
 
 Napi::Value ThrowWinApiException(const Napi::Env &env, DWORD lastError, const char *func, const char *path = nullptr);
 Napi::Value ThrowHResultException(const Napi::Env &env, HRESULT hr, const char *func = nullptr, const char *path = nullptr);
-
+#endif
 Napi::Value Rethrow(const Napi::Env &env, const std::exception &e);
 
+#ifdef _WIN32
 std::wstring toWC(const Napi::Value &input);
 
 // template <typename T> Napi::Value toNapi(const Napi::Env &env, T input);
@@ -104,7 +107,6 @@ std::wstring toWC(const Napi::Value &input);
 inline Napi::Value toNapi(const Napi::Env &env, const wchar_t *input) {
   return Napi::String::New(env, toMB(input, CodePage::UTF8, (std::numeric_limits<size_t>::max)()).c_str());
 }
-
 inline Napi::Value toNapi(const Napi::Env &env, VARIANT_BOOL input) {
   return Napi::Boolean::New(env, static_cast<bool>(input));
 }
@@ -117,3 +119,4 @@ Napi::Array convertMultiSZ(const Napi::Env &env, wchar_t *input, DWORD maxLength
 
 #define checkedBool(res, name, filePath) { if (!res) { throw WinApiException(::GetLastError(), name, filePath == nullptr ? nullptr : toMB(filePath, CodePage::UTF8, wcslen(filePath)).c_str()); } }
 #define checked(res, name, filePath) { if (res != ERROR_SUCCESS) { throw WinApiException(res, name, filePath == nullptr ? nullptr : toMB(filePath, CodePage::UTF8, wcslen(filePath)).c_str()); } }
+#endif

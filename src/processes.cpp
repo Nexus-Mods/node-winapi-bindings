@@ -2,12 +2,15 @@
 #include "util.h"
 #include "scopeguard.hpp"
 #include "fs.h"
+#ifdef _WIN32
 #include <windows.h>
 #include <tlhelp32.h>
 #include <UserEnv.h>
 #include <AclAPI.h>
+#endif
 #include <future>
 #include <unordered_map>
+#ifdef _WIN32
 
 typedef struct {
   DWORD pid;
@@ -31,8 +34,10 @@ template <typename StructT> Napi::Object convertToken(const Napi::Env &env, HAND
 
   return convert(env, token);
 }
+#endif
 
 Napi::Value GetModuleListWrap(const Napi::CallbackInfo &info) {
+  #ifdef _WIN32
   Napi::Env env = info.Env();
   auto convertME = [&env](const MODULEENTRY32W &mod) -> Napi::Object {
     Napi::Object item = Napi::Object::New(env);
@@ -42,12 +47,12 @@ Napi::Value GetModuleListWrap(const Napi::CallbackInfo &info) {
     item.Set("exePath", toMB(mod.szExePath, CodePage::UTF8, wcslen(mod.szExePath)));
     return item;
   };
-
+  #endif
   try {
     if (info.Length() != 1) {
-      throw std::exception("Expected 1 parameter (process id)");
+      throw Napi::Error::New(info.Env(), "Expected 1 parameter (process id)");
     }
-
+    #ifdef _WIN32
     Napi::Array modules = Napi::Array::New(info.Env());
 
     HANDLE snap = ::CreateToolhelp32Snapshot(TH32CS_SNAPMODULE, info[0].ToNumber().Uint32Value());
@@ -61,6 +66,9 @@ Napi::Value GetModuleListWrap(const Napi::CallbackInfo &info) {
     }
 
     return modules;
+    #else
+    return info.Env().Undefined();
+    #endif
   }
   catch (const std::exception &e) {
     return Rethrow(info.Env(), e);
@@ -70,9 +78,9 @@ Napi::Value GetModuleListWrap(const Napi::CallbackInfo &info) {
 Napi::Value GetProcessToken(const Napi::CallbackInfo &info) {
   try {
     if ((info.Length() < 1) || (info.Length() > 2)) {
-      throw std::exception("Expected 1 or 2 parameter(s) (type, pid?)");
+      throw Napi::Error::New(info.Env(), "Expected 1 or 2 parameter(s) (type, pid?)");
     }
-
+    #ifdef _WIN32
     std::string tokenType = info[0].ToString().Utf8Value();
 
     HANDLE processHandle;
@@ -95,12 +103,15 @@ Napi::Value GetProcessToken(const Napi::CallbackInfo &info) {
         return convertToken<TOKEN_ELEVATION>(info.Env(), token, TokenElevation);
       }
       else {
-        throw std::runtime_error(std::string("Unsupported token type \"" + tokenType + "\""));
+        throw Napi::Error::New(info.Env(), std::string("Unsupported token type \"" + tokenType + "\""));
       }
     }
     catch (DWORD code) {
       throw WinApiException(code, "GetTokenInformation");
     }
+    #else
+    return info.Env().Undefined();
+    #endif
   }
   catch (const std::exception &e) {
     return Rethrow(info.Env(), e);
@@ -108,6 +119,7 @@ Napi::Value GetProcessToken(const Napi::CallbackInfo &info) {
 }
 
 Napi::Value GetProcessListWrap(const Napi::CallbackInfo &info) {
+  #ifdef _WIN32
   Napi::Env env = info.Env();
 
   auto convertPE = [&env](const PROCESSENTRY32W &process) -> Napi::Object {
@@ -141,14 +153,17 @@ Napi::Value GetProcessListWrap(const Napi::CallbackInfo &info) {
   catch (const std::exception &e) {
     return Rethrow(info.Env(), e);
   }
+  #else
+  return info.Env().Undefined();
+  #endif
 }
 
 Napi::Value GetProcessWindowListWrap(const Napi::CallbackInfo &info) {
   try {
     if (info.Length() != 1) {
-      throw std::exception("Expected 1 parameter (process id)");
+      throw Napi::Error::New(info.Env(), "Expected 1 parameter (process id)");
     }
-
+    #ifdef _WIN32
     DWORD pid = info[0].ToNumber().Uint32Value();
 
     Napi::Array res = Napi::Array::New(info.Env());
@@ -185,6 +200,9 @@ Napi::Value GetProcessWindowListWrap(const Napi::CallbackInfo &info) {
     }
 
     return res;
+    #else
+    return info.Env().Undefined();
+    #endif
   }
   catch (const std::exception &e) {
     return Rethrow(info.Env(), e);
@@ -194,9 +212,9 @@ Napi::Value GetProcessWindowListWrap(const Napi::CallbackInfo &info) {
 Napi::Value SetForegroundWinWrap(const Napi::CallbackInfo &info) {
   try {
     if (info.Length() != 1) {
-      throw std::exception("Expected 1 parameter (window id)");
+      throw Napi::Error::New(info.Env(), "Expected 1 parameter (window id)");
     }
-
+    #ifdef _WIN32
     uint64_t winId = info[0].ToNumber().Uint32Value();
 
     HWND hwnd = reinterpret_cast<HWND>(winId);
@@ -206,6 +224,9 @@ Napi::Value SetForegroundWinWrap(const Napi::CallbackInfo &info) {
     }
 
     return Napi::Boolean::New(info.Env(), ::SetForegroundWindow(hwnd));
+    #else
+    return info.Env().Undefined();
+    #endif
   }
   catch (const std::exception &e) {
     return Rethrow(info.Env(), e);
@@ -215,9 +236,9 @@ Napi::Value SetForegroundWinWrap(const Napi::CallbackInfo &info) {
 Napi::Value SetProcessPreferredUILanguagesWrap(const Napi::CallbackInfo &info) {
   try {
     if (info.Length() != 1) {
-      throw std::exception("Expected 1 parameter (the list of language codes, in the format \"en-US\")");
+      throw Napi::Error::New(info.Env(), "Expected 1 parameter (the list of language codes, in the format \"en-US\")");
     }
-
+    #ifdef _WIN32
     Napi::Array languages = info[0].As<Napi::Array>();
 
     std::vector<wchar_t> buffer;
@@ -237,14 +258,14 @@ Napi::Value SetProcessPreferredUILanguagesWrap(const Napi::CallbackInfo &info) {
     if (!SetProcessPreferredUILanguages(MUI_LANGUAGE_NAME, &buffer[0], &count)) {
       throw WinApiException(::GetLastError(), "SetProcessPreferredUILanguages");
     }
-
+    #endif
     return info.Env().Undefined();
   }
   catch (const std::exception &e) {
     return Rethrow(info.Env(), e);
   }
 }
-
+#ifdef _WIN32
 Napi::Value GetPreferredLanguage(const Napi::CallbackInfo &info,
                           BOOL (*func)(DWORD, PULONG, PZZWSTR, PULONG),
                           const char *funcName) {
@@ -278,20 +299,33 @@ Napi::Value GetPreferredLanguage(const Napi::CallbackInfo &info,
     return Rethrow(info.Env(), e);
   }
 }
+#endif
 
 Napi::Value GetUserPreferredUILanguagesWrap(const Napi::CallbackInfo &info) {
+  #ifdef _WIN32
   return GetPreferredLanguage(info, &GetUserPreferredUILanguages, "GetUserPreferredUILanguages");
+  #else
+  return info.Env().Undefined();
+  #endif
 }
 
 Napi::Value GetSystemPreferredUILanguagesWrap(const Napi::CallbackInfo &info) {
+  #ifdef _WIN32
   return GetPreferredLanguage(info, &GetSystemPreferredUILanguages, "GetSystemPreferredUILanguages");
+  #else
+  return info.Env().Undefined();
+  #endif
 }
 
 Napi::Value GetProcessPreferredUILanguagesWrap(const Napi::CallbackInfo &info) {
+  #ifdef _WIN32
   return GetPreferredLanguage(info, &GetProcessPreferredUILanguages, "GetProcessPreferredUILanguages");
+  #else
+  return info.Env().Undefined();
+  #endif
 }
 
-
+#ifdef _WIN32
 typedef USERENVAPI
 HRESULT (WINAPI *CreateAppContainerProfileType)(
     _In_ PCWSTR pszAppContainerName,
@@ -343,19 +377,25 @@ private:
            && (DeleteAppContainerProfile != nullptr);
   }
 };
+#endif
 
 Napi::Value SupportsAppContainer(const Napi::CallbackInfo& info) {
+  #ifdef _WIN32
   return Napi::Boolean::New(info.Env(), UserEnv::instance().valid());
+  #else
+  return info.Env().Undefined();
+  #endif
 }
 
 Napi::Value CreateAppContainer(const Napi::CallbackInfo &info) {
   try {
+    #ifdef _WIN32
     if (!UserEnv::instance().valid()) {
       return info.Env().Undefined();
     }
 
     if (info.Length() != 3) {
-      throw std::exception("Expected 3 parameters (container name, display name, description)");
+      throw Napi::Error::New(info.Env(), "Expected 3 parameters (container name, display name, description)");
     }
 
     std::wstring containerName = toWC(info[0]);
@@ -366,7 +406,7 @@ Napi::Value CreateAppContainer(const Napi::CallbackInfo &info) {
     for (auto id : { WinCapabilityPicturesLibrarySid }) {
       PSID psid = HeapAlloc(GetProcessHeap(), 0, SECURITY_MAX_SID_SIZE);
       if (psid == nullptr) {
-        throw std::runtime_error("alloc failed");
+        throw Napi::Error::New(info.Env(), "alloc failed");
       }
       DWORD sidlistsize = SECURITY_MAX_SID_SIZE;
       if (::CreateWellKnownSid(id, NULL, psid, &sidlistsize) != TRUE) {
@@ -394,7 +434,7 @@ Napi::Value CreateAppContainer(const Napi::CallbackInfo &info) {
       }
       return ThrowHResultException(info.Env(), res, "CreateAppContainerProfile");
     }
-
+    #endif
     return info.Env().Undefined();
   }
   catch (const std::exception& e) {
@@ -404,19 +444,21 @@ Napi::Value CreateAppContainer(const Napi::CallbackInfo &info) {
 
 Napi::Value DeleteAppContainer(const Napi::CallbackInfo& info) {
   try {
+    #ifdef _WIN32
     if (!UserEnv::instance().valid()) {
       return info.Env().Undefined();
     }
-
+    #endif
     if (info.Length() != 1) {
-      throw std::exception("Expected 1 parameter (container name)");
+      throw Napi::Error::New(info.Env(), "Expected 1 parameter (container name)");
     }
-
+    #ifdef _WIN32
     std::wstring containerName = toWC(info[0]);
     HRESULT res = UserEnv::instance().DeleteAppContainerProfile(containerName.c_str());
     if (FAILED(res)) {
       return ThrowHResultException(info.Env(), res, "DeleteAppContainerProfile");
     }
+    #endif
     return info.Env().Undefined();
   }
   catch (const std::exception& e) {
@@ -425,7 +467,7 @@ Napi::Value DeleteAppContainer(const Napi::CallbackInfo& info) {
 
 }
 
-
+#ifdef _WIN32
 class ProcessMonitor : public Napi::AsyncProgressQueueWorker<char> {
 public:
   ProcessMonitor(const Napi::Function &onExit, const Napi::Function &onStdOut, HANDLE proc, HANDLE stdOutHandle)
@@ -488,13 +530,14 @@ private:
   HANDLE mProc;
   HANDLE mStdOut;
 };
+#endif
 
 Napi::Value RunInContainer(const Napi::CallbackInfo& info) {
   try {
     if (info.Length() != 5) {
-      throw std::exception("Expected 5 parameters (container name, commandline, working directory, onexit callback, stdout callback)");
+      throw Napi::Error::New(info.Env(), "Expected 5 parameters (container name, commandline, working directory, onexit callback, stdout callback)");
     }
-
+    #ifdef _WIN32
     std::wstring containerName = toWC(info[0]);
     std::wstring commandLine = toWC(info[1]);
     std::wstring cwdPath = toWC(info[2]);
@@ -574,12 +617,16 @@ Napi::Value RunInContainer(const Napi::CallbackInfo& info) {
     worker->Queue();
 
     return Napi::Number::From(info.Env(), processInfo.dwProcessId);
+    #else
+    return info.Env().Undefined();
+    #endif
   }
   catch (const std::exception& e) {
     return Rethrow(info.Env(), e);
   }
 }
 
+#ifdef _WIN32
 void GrantPermission(PSID sid, HANDLE handle, LPCWSTR name, SE_OBJECT_TYPE type, DWORD accessPermissions)
 {
   EXPLICIT_ACCESS_W explicitAccess;
@@ -653,13 +700,14 @@ SE_OBJECT_TYPE typeFromName(const std::string& name) {
 
   throw std::exception((std::string("invalid type \"") + name + "\"").c_str());
 }
+#endif
 
 Napi::Value GrantAppContainer(const Napi::CallbackInfo& info) {
   try {
     if (info.Length() != 4) {
-      throw std::exception("Expected 4 parameters (container, object, type, permissions)");
+      throw Napi::Error::New(info.Env(), "Expected 4 parameters (container, object, type, permissions)");
     }
-
+    #ifdef _WIN32
     std::wstring containerName = toWC(info[0]);
     std::wstring objectName = toWC(info[1]);
     std::string typeName = info[2].ToString();
@@ -689,6 +737,7 @@ Napi::Value GrantAppContainer(const Napi::CallbackInfo& info) {
     else {
       GrantPermissionNamed(sid, objectName.data(), type, mapPermissions(permissions));
     }
+    #endif
     return info.Env().Undefined();
   }
   catch (const std::exception& e) {
@@ -696,6 +745,7 @@ Napi::Value GrantAppContainer(const Napi::CallbackInfo& info) {
   }
 }
 
+#ifdef _WIN32
 DWORD mapIntegrityLevel(const std::string &integrityName) {
   static const std::unordered_map<std::string, DWORD> integrityMap{
     { "untrusted", SECURITY_MANDATORY_UNTRUSTED_RID },
@@ -707,13 +757,14 @@ DWORD mapIntegrityLevel(const std::string &integrityName) {
   }
   return iter->second;
 }
+#endif
 
 Napi::Value CreateProcessWithIntegrity(const Napi::CallbackInfo& info) {
   try {
     if (info.Length() != 5) {
-      throw std::exception("Expected 5 parameters (commandline, working directory, integrity level, onexit callback, stdout callback)");
+      throw Napi::Error::New(info.Env(), "Expected 5 parameters (commandline, working directory, integrity level, onexit callback, stdout callback)");
     }
-
+    #ifdef _WIN32
     std::wstring commandLine = toWC(info[0]);
     std::wstring cwdPath = toWC(info[1]);
     std::string integrityName = info[2].ToString();
@@ -794,6 +845,9 @@ Napi::Value CreateProcessWithIntegrity(const Napi::CallbackInfo& info) {
     worker->Queue();
 
     return Napi::Number::From(info.Env(), processInfo.dwProcessId);
+    #else
+    return info.Env().Undefined();
+    #endif
   }
   catch (const std::exception &e) {
     return Rethrow(info.Env(), e);
