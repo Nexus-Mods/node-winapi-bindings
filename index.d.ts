@@ -81,7 +81,7 @@ export type REGISTRY_TYPE = 'REG_BINARY' | 'REG_DWORD' | 'REG_DWORD_BIG_ENDIAN' 
 // open a registry handle. To ensure the handle isn't leaked it's only available within the callback.
 export function WithRegOpen(hive: REGISTRY_HIVE, path: string, cb: (hkey: Buffer) => void);
 // get a value from the registry using a handle created by WithRegOpen or a hive, and a path and valuename within that hkey.
-export function RegGetValue(hkey: Buffer | REGISTRY_HIVE, path: string, key: string): { type: RegType, value: string | string[] | number | Buffer };
+export function RegGetValue(hkey: Buffer | REGISTRY_HIVE, path: string, key: string): { type: REGISTRY_TYPE, value: string | string[] | number | Buffer };
 // set a value in the registry
 export function RegSetKeyValue(key: Buffer | REGISTRY_HIVE, path: string, key: string, value: string | string[] | number | Buffer);
 // get a list of keys within an hkey
