@@ -71,7 +71,7 @@ uint64_t toTimestamp(FILETIME ft)
   return date.QuadPart / 10000;
 }
 
-HKEY decodeKeyParameter(Napi::Env &env, const Napi::Value &input) {
+HKEY decodeKeyParameter(const Napi::Env &env, const Napi::Value &input) {
   HKEY key;
   if (input.IsString()) {
     std::string hkeyStr(input.ToString());

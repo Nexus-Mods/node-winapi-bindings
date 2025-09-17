@@ -64,7 +64,7 @@
             },
             "msbuild_settings": {
               "ClCompile": {
-                "AdditionalOptions": ["-std:c++17", "/MT"],
+                "AdditionalOptions": ['/std:c++20', '/Zc:__cplusplus', '/MT'],
                 "RuntimeLibrary": "MultiThreaded"
               }
             }
