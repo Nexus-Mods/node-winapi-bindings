@@ -1,6 +1,6 @@
 {
   "name": "winapi-bindings",
-  "version": "2.6.1",
+  "version": "2.7.0",
   "description": "Assorted winapi functions.",
   "main": "index.js",
   "repository": {
@@ -9,25 +9,25 @@
   },
   "scripts": {
     "savepdb": "cross-var shx cp build/Release/winapi.pdb pdbs/winapi.$npm_package_version.pdb",
-    "prebuild": "prebuild.cmd -r napi -t 4 -a x64 --prepack codesign",
-    "install": "prebuild-install -r napi -t 4 -a x64 || (autogypi && node-gyp rebuild)"
+    "prebuild": "prebuild.cmd -r napi -t 8 -a x64 --prepack codesign",
+    "install": "prebuild-install -r napi -t 8 -a x64 || (autogypi && node-gyp rebuild)"
   },
   "binary": {
     "napi_versions": [
-      4
+      "8"
     ]
   },
   "author": "Black Tree Gaming Ltd",
   "license": "GPL-3.0",
   "devDependencies": {
     "cross-var": "^1.1.0",
-    "prebuild": "^11.0.3",
+    "prebuild": "^12.1.0",
     "shx": "^0.3.4"
   },
   "dependencies": {
     "autogypi": "^0.2.2",
-    "node-addon-api": "^3.1.0",
-    "node-gyp": "^9.0.0",
-    "prebuild-install": "7.1.0"
+    "node-addon-api": "^8.0.0",
+    "node-gyp": "^10.0.0",
+    "prebuild-install": "^7.1.2"
   }
 }
