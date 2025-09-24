@@ -1,6 +1,6 @@
 {
   "name": "winapi-bindings",
-  "version": "2.7.0",
+  "version": "2.7.1",
   "description": "Assorted winapi functions.",
   "main": "index.js",
   "repository": {
@@ -13,9 +13,7 @@
     "install": "prebuild-install -r napi -t 8 -a x64 || (autogypi && node-gyp rebuild)"
   },
   "binary": {
-    "napi_versions": [
-      "8"
-    ]
+    "napi_versions": [8]
   },
   "author": "Black Tree Gaming Ltd",
   "license": "GPL-3.0",
