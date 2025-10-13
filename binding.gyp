@@ -35,6 +35,8 @@
                         "src/permissions.h",
                         "src/convenience.cpp",
                         "src/convenience.h",
+                        "src/kernel32.h",
+                        "src/kernel32.cpp",
                         "src/winapi.cpp"
                     ],
                     "libraries": [
