@@ -11,6 +11,7 @@
 #include "processes.h"
 #include "permissions.h"
 #include "system.h"
+#include "kernel32.h"
 
 #pragma comment(lib, "Version.lib")
 
@@ -29,6 +30,7 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
   Convenience::Init(env, exports);
   Permissions::Init(env, exports);
   System::Init(env, exports);
+  Kernel32::Init(env, exports);
 
   return exports;
 }

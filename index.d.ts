@@ -533,3 +533,15 @@ export function RunInContainer(containerName: string, commandLine: string, cwdPa
  *                 to distinguish between stdout and stderr
  */
 export function CreateProcessWithIntegrity(commandLine: string, cwdPath: string, integrity: 'untrusted' | 'low', onExit: (code: number) => void, onStdOut: (message: string) => void);
+
+export interface NativeArchInfo {
+  nativeMachineCode: number;
+  nativeArch: string;
+  /**
+   * Whether GetNativeSystemInfo was used instead of IsWow64Process2
+   * Only happens on older versions of Windows
+   */
+  usedFallback: boolean;
+}
+
+export function GetNativeArch(): NativeArchInfo;
