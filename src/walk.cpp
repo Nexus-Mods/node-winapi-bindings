@@ -130,10 +130,25 @@ NtQueryInformationFile_type NtQueryInformationFile = nullptr;
 
 static const unsigned int BUFFER_SIZE = 1024;
 
+// Apply the Win32 extended-length path prefix (\\?\) for paths at or
+// exceeding MAX_PATH. This prefix disables Win32 path post-processing
+// so we must ensure the path is already well-formed: backslash-separated,
+// no relative components.
+std::wstring ensureLongPathPrefix(const std::wstring &path) {
+  if (path.size() < MAX_PATH || path.substr(0, 4) == L"\\\\?\\") {
+    return path;
+  }
+  std::wstring normalized = path;
+  std::replace(normalized.begin(), normalized.end(), L'/', L'\\');
+  return L"\\\\?\\" + normalized;
+}
+
 bool getFileDetails(const std::wstring &filePath, FILE_ALL_INFORMATION *fileInfo, size_t size) {
   DWORD flags = FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT;
 
-  HANDLE handle = CreateFileW(filePath.c_str(),
+  std::wstring longPath = ensureLongPathPrefix(filePath);
+
+  HANDLE handle = CreateFileW(longPath.c_str(),
     FILE_READ_ATTRIBUTES,
     FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
     nullptr,
@@ -150,7 +165,8 @@ bool getFileDetails(const std::wstring &filePath, FILE_ALL_INFORMATION *fileInfo
 }
 
 HANDLE openDirectory(const std::wstring &name) {
-  return ::CreateFileW(name.c_str()
+  std::wstring longName = ensureLongPathPrefix(name);
+  return ::CreateFileW(longName.c_str()
     , GENERIC_READ
     , FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE
     , nullptr
