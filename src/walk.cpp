@@ -133,7 +133,13 @@ static const unsigned int BUFFER_SIZE = 1024;
 bool getFileDetails(const std::wstring &filePath, FILE_ALL_INFORMATION *fileInfo, size_t size) {
   DWORD flags = FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT;
 
-  HANDLE handle = CreateFileW(filePath.c_str(),
+  // Use extended-length path prefix to handle paths exceeding MAX_PATH (260 chars)
+  std::wstring longPath = filePath;
+  if (longPath.size() >= MAX_PATH && longPath.substr(0, 4) != L"\\\\?\\") {
+    longPath = L"\\\\?\\" + longPath;
+  }
+
+  HANDLE handle = CreateFileW(longPath.c_str(),
     FILE_READ_ATTRIBUTES,
     FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
     nullptr,
@@ -150,7 +156,11 @@ bool getFileDetails(const std::wstring &filePath, FILE_ALL_INFORMATION *fileInfo
 }
 
 HANDLE openDirectory(const std::wstring &name) {
-  return ::CreateFileW(name.c_str()
+  std::wstring longName = name;
+  if (longName.size() >= MAX_PATH && longName.substr(0, 4) != L"\\\\?\\") {
+    longName = L"\\\\?\\" + longName;
+  }
+  return ::CreateFileW(longName.c_str()
     , GENERIC_READ
     , FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE
     , nullptr
