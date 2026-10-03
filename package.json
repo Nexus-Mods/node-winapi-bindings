@@ -8,6 +8,7 @@
     "url": "https://github.com/Nexus-Mods/node-winapi-bindings.git"
   },
   "scripts": {
+    "test": "node --test",
     "savepdb": "cross-var shx cp build/Release/winapi.pdb pdbs/winapi.$npm_package_version.pdb",
     "prebuild": "prebuild.cmd -r napi -t 8 -a x64 --prepack codesign",
     "install": "prebuild-install -r napi -t 8 -a x64 || (autogypi && node-gyp rebuild)"

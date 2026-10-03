@@ -1,5 +1,5 @@
 if (process.platform !== 'win32') {
-  module.exports = {};
+  module.exports = require('./ini');
   return;
 }
 
