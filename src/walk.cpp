@@ -263,6 +263,7 @@ std::vector<Entry> quickFindFiles(const std::wstring &directoryName, LPCWSTR pat
             : directoryName + L"\\" + std::wstring(info->FileName, nameLength);
           file.attributes = info->FileAttributes;
           file.size = info->AllocationSize.QuadPart;
+          file.length = info->EndOfFile.QuadPart;
           file.mtime = static_cast<uint32_t>((info->LastWriteTime.QuadPart - UNIX_EPOCH) / NS100_TO_SECOND);
           if (details) {
             FILE_ALL_INFORMATION *allInfo = (FILE_ALL_INFORMATION*)&detailsBuffer[0];
@@ -314,6 +315,7 @@ bool walkInner(const std::wstring &basePath,
     terminator.filePath = basePath;
     terminator.attributes = 0x80000000 | FILE_ATTRIBUTE_DIRECTORY;
     terminator.size = 0;
+    terminator.length = 0;
     if (!append({terminator})) {
       return false;
     }

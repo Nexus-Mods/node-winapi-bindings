@@ -243,8 +243,10 @@ export interface IEntry {
   isDirectory: boolean;
   // whether this is a reparse point (symbolic link or junction point)
   isReparsePoint: boolean
-  // size in bytes
+  // space allocated on disk in bytes, rounded up to whole clusters
   size: number;
+  // length of the file content in bytes
+  length: number;
   // last modification time (as seconds since the unix epoch)
   mtime: number;
   // if the terminators option was set, this indicates whether an entry is such a terminator
