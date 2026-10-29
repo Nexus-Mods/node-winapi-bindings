@@ -11,6 +11,7 @@ struct Entry {
   std::wstring filePath;
   uint32_t attributes;
   uint64_t size;
+  uint64_t length;
   uint32_t mtime;
   std::optional<uint32_t> linkCount;
   std::optional<uint64_t> id;

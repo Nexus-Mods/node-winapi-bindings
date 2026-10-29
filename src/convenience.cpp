@@ -119,6 +119,7 @@ Napi::Object convert(const Napi::Env &env, const Entry &input) {
   result.Set("isDirectory", Napi::Boolean::New(env, (input.attributes & FILE_ATTRIBUTE_DIRECTORY) != 0));
   result.Set("isReparsePoint", Napi::Boolean::New(env, (input.attributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0));
   result.Set("size", Napi::Number::New(env, static_cast<double>(input.size)));
+  result.Set("length", Napi::Number::New(env, static_cast<double>(input.length)));
   result.Set("mtime", Napi::Number::New(env, input.mtime));
   result.Set("isTerminator", Napi::Boolean::New(env, (input.attributes & FILE_ATTRIBUTE_TERMINATOR) != 0));
 
